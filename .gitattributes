@@ -1,0 +1,7 @@
+# Script e file batch per Windows: sempre con a capo CRLF, anche se clonati altrove
+* text=auto
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+*.png binary
+*.ico binary

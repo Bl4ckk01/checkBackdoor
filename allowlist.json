@@ -1,0 +1,6 @@
+{
+    "_istruzioni": "Esempio condiviso. Le tue voci personali vanno in allowlist.local.json (stesso formato, esclusa da git). Sono ammessi i caratteri jolly * e ?. Un percorso nasconde qualunque file in quella posizione: per essere piu' rigoroso usa l'hash SHA-256 (cambia a ogni aggiornamento del programma).",
+    "paths": [],
+    "sha256": [],
+    "titles": []
+}

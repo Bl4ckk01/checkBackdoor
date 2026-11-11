@@ -1,0 +1,62 @@
+# Verifica opzionale degli hash su VirusTotal. Viene inviato SOLO l'hash SHA-256
+# (un'impronta del file), mai il file stesso. Serve una chiave API gratuita.
+
+function Invoke-VirusTotalLookup {
+    param([string]$ApiKey, [int]$Max = 20, [switch]$IncludeInfo)
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+    $hashes = @($script:Findings |
+        Where-Object { $_.Sha256 -and ($IncludeInfo -or $_.Severity -ne 'Info') -and -not (Test-MicrosoftSigner $_.Signer) } |
+        Select-Object -ExpandProperty Sha256 -Unique | Select-Object -First $Max)
+    if (-not $hashes) { return }
+
+    $results = @{}
+    for ($i = 0; $i -lt $hashes.Count; $i++) {
+        $h = $hashes[$i]
+        Write-Progress -Activity 'VirusTotal' -Status "Hash $($i + 1) di $($hashes.Count) (limite API gratuita: 4 al minuto)" -PercentComplete (100 * $i / $hashes.Count)
+        if ($i -gt 0) { Start-Sleep -Seconds 16 }
+        try {
+            $r = Invoke-RestMethod -Uri "https://www.virustotal.com/api/v3/files/$h" -Headers @{ 'x-apikey' = $ApiKey } -ErrorAction Stop
+            $st = $r.data.attributes.last_analysis_stats
+            $label = $null
+            try { $label = $r.data.attributes.popular_threat_classification.suggested_threat_label } catch { }
+            $results[$h] = [pscustomobject]@{
+                Known = $true; Malicious = [int]$st.malicious; Suspicious = [int]$st.suspicious
+                Total = [int]$st.malicious + [int]$st.suspicious + [int]$st.undetected + [int]$st.harmless
+                Label = $label; Link = "https://www.virustotal.com/gui/file/$h"
+            }
+        } catch {
+            $code = $null
+            try { $code = [int]$_.Exception.Response.StatusCode } catch { }
+            if ($code -eq 404) {
+                $results[$h] = [pscustomobject]@{ Known = $false; Malicious = 0; Suspicious = 0; Total = 0; Label = $null; Link = "https://www.virustotal.com/gui/file/$h" }
+            } elseif ($code -in 401, 403) {
+                Write-ScanWarning 'Chiave API di VirusTotal non valida: verifica saltata.'
+                break
+            } elseif ($code -eq 429) {
+                Write-ScanWarning 'Limite di richieste VirusTotal raggiunto: verifica interrotta.'
+                break
+            }
+        }
+    }
+    Write-Progress -Activity 'VirusTotal' -Completed
+
+    foreach ($f in $script:Findings) {
+        if (-not $f.Sha256 -or -not $results.ContainsKey($f.Sha256)) { continue }
+        $vt = $results[$f.Sha256]
+        $f.VirusTotal = $vt
+        if (-not $vt.Known) {
+            $f.Reasons = @($f.Reasons) + 'VirusTotal non ha mai visto questo file: e'' raro o creato apposta per te (da caricare manualmente per un''analisi)'
+        } elseif ($vt.Malicious -ge 5) {
+            $f.Severity = 'Alto'
+            $f.Reasons = @("VirusTotal: $($vt.Malicious)/$($vt.Total) antivirus lo considerano malevolo$(if ($vt.Label) { " ($($vt.Label))" })") + @($f.Reasons)
+        } elseif ($vt.Malicious -ge 1 -or $vt.Suspicious -ge 2) {
+            if ($f.Severity -in 'Basso', 'Info') { $f.Severity = 'Medio' }
+            $f.Reasons = @("VirusTotal: $($vt.Malicious) rilevamenti malevoli e $($vt.Suspicious) sospetti su $($vt.Total) (pochi rilevamenti possono essere falsi positivi, specie per crack e tool)") + @($f.Reasons)
+        } else {
+            $f.Reasons = @("VirusTotal: 0/$($vt.Total) rilevamenti") + @($f.Reasons)
+        }
+        # Stesso ID, gravita' e motivi aggiornati: l'app sostituisce la segnalazione
+        Write-ScanEvent 'finding.updated' ([ordered]@{ check = 'VirusTotal'; finding = $f })
+    }
+}

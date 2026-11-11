@@ -1,0 +1,22 @@
+# Report e liste personali: contengono dati di chi esegue la scansione
+report/
+allowlist.local.json
+
+# Risultati dei test
+testResults.xml
+
+# Compilazione dell'app (contiene percorsi assoluti del PC di chi compila)
+app/**/bin/
+app/**/obj/
+*.user
+
+# File di lavoro degli strumenti di design
+.taste-skill/
+.impeccable/
+PRODUCT.md
+
+# Configurazione locale degli strumenti di sviluppo
+.claude/
+
+# Pacchetti di release (tools\Build-Release.ps1)
+dist/
