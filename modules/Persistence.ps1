@@ -1,10 +1,10 @@
-# Punti di avvio automatico nel registro e nelle cartelle Esecuzione automatica.
-# Sono il modo piu' comune con cui una backdoor sopravvive al riavvio (MITRE TA0003).
+# Autostart locations in the registry and the Startup folders.
+# They are the most common way a backdoor survives a reboot (MITRE TA0003).
 
 function Invoke-CheckPersistence {
-    $cat = 'Avvio automatico'
+    $cat = 'Autostart'
 
-    # --- Chiavi Run / RunOnce (T1547.001) -----------------------------------
+    # --- Run / RunOnce keys (T1547.001) -------------------------------------------
     $runSubKeys = @(
         'Software\Microsoft\Windows\CurrentVersion\Run'
         'Software\Microsoft\Windows\CurrentVersion\RunOnce'
@@ -15,7 +15,7 @@ function Invoke-CheckPersistence {
         'Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Run'
         'Software\WOW6432Node\Microsoft\Windows\CurrentVersion\RunOnce'
     )
-    $roots = @([pscustomobject]@{ Root = 'HKLM:'; User = 'Tutti gli utenti' }) + @(Get-UserHives)
+    $roots = @([pscustomobject]@{ Root = 'HKLM:'; User = 'All users' }) + @(Get-UserHives)
     foreach ($r in $roots) {
         foreach ($sub in $runSubKeys) {
             $path = "$($r.Root)\$sub"
@@ -25,26 +25,26 @@ function Invoke-CheckPersistence {
                     -Remedy (New-RegistryRemedy -Key $path -Name $v.Name)
             }
         }
-        # Valori "Load" e "Run" legacy di Windows NT\Windows
+        # Legacy "Load" and "Run" values of Windows NT\Windows
         $legacy = "$($r.Root)\Software\Microsoft\Windows NT\CurrentVersion\Windows"
         foreach ($n in 'Load', 'Run') {
             $val = Get-RegValue $legacy $n
             if ($val) {
                 Register-AutorunEntry -Category $cat -Location $legacy -Name $n -Command $val -Mitre 'T1547.001' `
-                    -ExtraScore 30 -ExtraReasons 'Punto di avvio "legacy" quasi mai usato da software legittimo'
+                    -ExtraScore 30 -ExtraReasons 'Legacy autostart location almost never used by legitimate software'
             }
         }
-        # Script di logon per utente (T1037.001)
+        # Per-user logon script (T1037.001)
         $logon = Get-RegValue "$($r.Root)\Environment" 'UserInitMprLogonScript'
         if ($logon) {
             Register-AutorunEntry -Category $cat -Location "$($r.Root)\Environment" -Name 'UserInitMprLogonScript' -Command $logon `
-                -Mitre 'T1037.001' -ExtraScore 40 -ExtraReasons 'Script di logon nascosto: sui PC di casa non viene mai usato'
+                -Mitre 'T1037.001' -ExtraScore 40 -ExtraReasons 'Hidden logon script: home PCs never use it'
         }
-        # AutoRun del prompt dei comandi: viene eseguito a ogni apertura di cmd.exe
+        # Command prompt AutoRun: runs every time cmd.exe opens
         $car = Get-RegValue "$($r.Root)\Software\Microsoft\Command Processor" 'AutoRun'
         if ($car) {
             Register-AutorunEntry -Category $cat -Location "$($r.Root)\Software\Microsoft\Command Processor" -Name 'AutoRun' -Command $car `
-                -Mitre 'T1546' -ExtraScore 35 -ExtraReasons 'Comando eseguito ad ogni avvio di cmd.exe'
+                -Mitre 'T1546' -ExtraScore 35 -ExtraReasons 'Command run every time cmd.exe starts'
         }
         # Screensaver (T1546.002)
         $scr = Get-RegValue "$($r.Root)\Control Panel\Desktop" 'SCRNSAVE.EXE'
@@ -56,54 +56,54 @@ function Invoke-CheckPersistence {
     $cpHklm = Get-RegValue 'HKLM:\Software\Microsoft\Command Processor' 'AutoRun'
     if ($cpHklm) {
         Register-AutorunEntry -Category $cat -Location 'HKLM:\Software\Microsoft\Command Processor' -Name 'AutoRun' -Command $cpHklm `
-            -Mitre 'T1546' -ExtraScore 35 -ExtraReasons 'Comando eseguito ad ogni avvio di cmd.exe'
+            -Mitre 'T1546' -ExtraScore 35 -ExtraReasons 'Command run every time cmd.exe starts'
     }
 
-    # --- Winlogon Shell / Userinit (T1547.004) ------------------------------
+    # --- Winlogon Shell / Userinit (T1547.004) -----------------------------------
     $wl = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon'
     $shell = Get-RegValue $wl 'Shell'
     Add-InventoryItem $cat "$wl | Shell" $shell
     if ($shell -and $shell.Trim().ToLower() -notin @('explorer.exe', "$env:SystemRoot\explorer.exe".ToLower())) {
-        Add-Finding -Category $cat -Severity 'Alto' -Title 'Winlogon Shell modificato' -Detail $wl -Evidence "Shell = $shell" `
-            -Mitre 'T1547.004' -Reasons 'Il valore normale e'' "explorer.exe". Qualsiasi aggiunta viene eseguita ad ogni accesso.' `
-            -Recommendation 'Ripristina il valore Shell a "explorer.exe" dopo aver identificato il programma aggiunto.'
+        Add-Finding -Category $cat -Severity 'High' -Title 'Winlogon Shell changed' -Detail $wl -Evidence "Shell = $shell" `
+            -Mitre 'T1547.004' -Reasons 'The normal value is "explorer.exe". Anything added runs at every sign-in.' `
+            -Recommendation 'Set the Shell value back to "explorer.exe" after identifying the program that was added.'
     }
     $userinit = Get-RegValue $wl 'Userinit'
     Add-InventoryItem $cat "$wl | Userinit" $userinit
     $okUserinit = @("$env:SystemRoot\system32\userinit.exe,", "$env:SystemRoot\system32\userinit.exe") | ForEach-Object { $_.ToLower() }
     if ($userinit -and $userinit.Trim().ToLower() -notin $okUserinit) {
-        Add-Finding -Category $cat -Severity 'Alto' -Title 'Winlogon Userinit modificato' -Detail $wl -Evidence "Userinit = $userinit" `
-            -Mitre 'T1547.004' -Reasons 'Il valore normale e'' "C:\Windows\system32\userinit.exe,". Programmi aggiunti qui partono ad ogni accesso.' `
-            -Recommendation 'Ripristina Userinit a "C:\Windows\system32\userinit.exe," dopo aver identificato il programma aggiunto.'
+        Add-Finding -Category $cat -Severity 'High' -Title 'Winlogon Userinit changed' -Detail $wl -Evidence "Userinit = $userinit" `
+            -Mitre 'T1547.004' -Reasons 'The normal value is "C:\Windows\system32\userinit.exe,". Programs added here start at every sign-in.' `
+            -Recommendation 'Set Userinit back to "C:\Windows\system32\userinit.exe," after identifying the program that was added.'
     }
     foreach ($hu in Get-UserHives) {
         $us = Get-RegValue "$($hu.Root)\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" 'Shell'
         if ($us) {
-            Add-Finding -Category $cat -Severity 'Alto' -Title "Shell personalizzata per l'utente $($hu.User)" -Evidence "Shell = $us" `
+            Add-Finding -Category $cat -Severity 'High' -Title "Custom shell for user $($hu.User)" -Evidence "Shell = $us" `
                 -Detail "$($hu.Root)\Software\Microsoft\Windows NT\CurrentVersion\Winlogon" -Mitre 'T1547.004' `
-                -Reasons 'Una shell per-utente sostituisce Esplora risorse: tecnica usata per avviare malware al logon.'
+                -Reasons 'A per-user shell replaces File Explorer: a technique used to start malware at sign-in.'
         }
     }
-    # Winlogon Notify / pacchetti di autenticazione
+    # Winlogon Notify / authentication packages
     foreach ($k in Get-ChildItem -LiteralPath "$wl\Notify" -ErrorAction SilentlyContinue) {
         $dll = Get-RegValue $k.PSPath 'DLLName'
         if ($dll) { Register-AutorunEntry -Category $cat -Location "$wl\Notify" -Name $k.PSChildName -Command $dll -Mitre 'T1547.004' }
     }
 
-    # --- AppInit_DLLs (T1546.010) -------------------------------------------
+    # --- AppInit_DLLs (T1546.010) ------------------------------------------------
     foreach ($p in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Windows', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\Windows') {
         $dlls = Get-RegValue $p 'AppInit_DLLs'
         $load = Get-RegValue $p 'LoadAppInit_DLLs'
         if ($dlls) {
             Add-InventoryItem $cat "$p | AppInit_DLLs" $dlls
-            $sev = 'Medio'; if ($load -eq 1) { $sev = 'Alto' }
-            Add-Finding -Category $cat -Severity $sev -Title 'AppInit_DLLs impostato' -Detail $p -Evidence "AppInit_DLLs = $dlls ; LoadAppInit_DLLs = $load" `
-                -Mitre 'T1546.010' -Reasons 'Le DLL elencate vengono caricate in quasi ogni programma che usa user32.dll: tecnica classica di rootkit/spyware.' `
-                -Recommendation 'Verifica la DLL indicata; se non appartiene a un software che conosci, svuota il valore AppInit_DLLs.'
+            $sev = 'Medium'; if ($load -eq 1) { $sev = 'High' }
+            Add-Finding -Category $cat -Severity $sev -Title 'AppInit_DLLs is set' -Detail $p -Evidence "AppInit_DLLs = $dlls ; LoadAppInit_DLLs = $load" `
+                -Mitre 'T1546.010' -Reasons 'The listed DLLs are loaded into almost every program that uses user32.dll: a classic rootkit/spyware technique.' `
+                -Recommendation 'Check the DLL; if it does not belong to software you know, empty the AppInit_DLLs value.'
         }
     }
 
-    # --- Image File Execution Options: Debugger e SilentProcessExit (T1546.012)
+    # --- Image File Execution Options: Debugger and SilentProcessExit (T1546.012)
     $ifeo = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Image File Execution Options'
     $accessibility = 'sethc.exe|utilman.exe|osk.exe|magnify.exe|narrator.exe|displayswitch.exe|atbroker.exe'
     $security = 'msmpeng.exe|mpcmdrun.exe|msascui.exe|securityhealth\w*.exe|taskmgr.exe|procexp\w*.exe|autoruns\w*.exe|mbam\w*.exe|avast\w*.exe|avg\w*.exe|ekrn.exe|egui.exe|avp.exe|bdagent.exe|regedit.exe|cmd.exe|powershell.exe'
@@ -111,42 +111,42 @@ function Invoke-CheckPersistence {
         foreach ($k in Get-ChildItem -LiteralPath $ifeoRoot -ErrorAction SilentlyContinue) {
             $dbg = Get-RegValue $k.PSPath 'Debugger'
             if ($dbg) {
-                $extra = 45; $why = 'Un "Debugger" IFEO fa partire un altro programma al posto di quello richiesto.'
-                if ($k.PSChildName -match "^($accessibility)$") { $extra = 80; $why = "Backdoor di accessibilita': premendo 5 volte MAIUSC (o il tasto Accessibilita') nella schermata di login si apre un programma arbitrario con privilegi SYSTEM." }
-                elseif ($k.PSChildName -match "^($security)$") { $extra = 70; $why = 'Blocca o dirotta un programma di sicurezza/diagnostica: tipico dei malware che impediscono la propria rimozione.' }
+                $extra = 45; $why = 'An IFEO "Debugger" starts another program instead of the one requested.'
+                if ($k.PSChildName -match "^($accessibility)$") { $extra = 80; $why = 'Accessibility backdoor: pressing SHIFT 5 times (or the Accessibility button) on the sign-in screen opens an arbitrary program with SYSTEM rights.' }
+                elseif ($k.PSChildName -match "^($security)$") { $extra = 70; $why = 'Blocks or hijacks a security/diagnostic program: typical of malware that prevents its own removal.' }
                 elseif ($dbg -match '(?i)vsjitdebugger|windbg|devenv|procexp') { $extra = 0 }
-                Register-AutorunEntry -Category $cat -Location $ifeoRoot -Name "IFEO Debugger per $($k.PSChildName)" -Command $dbg `
+                Register-AutorunEntry -Category $cat -Location $ifeoRoot -Name "IFEO Debugger for $($k.PSChildName)" -Command $dbg `
                     -Mitre 'T1546.012' -ExtraScore $extra -ExtraReasons $why `
-                    -Recommendation "Elimina il valore Debugger da $($k.PSPath -replace '^.*::','')"
+                    -Recommendation "Delete the Debugger value from $($k.PSPath -replace '^.*::','')"
             }
             $gf = Get-RegValue $k.PSPath 'GlobalFlag'
             if ($gf -and ($gf -band 0x200)) {
                 $spe = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\SilentProcessExit\$($k.PSChildName)"
                 $mon = Get-RegValue $spe 'MonitorProcess'
                 if ($mon) {
-                    Register-AutorunEntry -Category $cat -Location $spe -Name "SilentProcessExit per $($k.PSChildName)" -Command $mon `
-                        -Mitre 'T1546.012' -ExtraScore 50 -ExtraReasons 'Un programma viene avviato ogni volta che questo processo si chiude.'
+                    Register-AutorunEntry -Category $cat -Location $spe -Name "SilentProcessExit for $($k.PSChildName)" -Command $mon `
+                        -Mitre 'T1546.012' -ExtraScore 50 -ExtraReasons 'A program starts every time this process exits.'
                 }
             }
         }
     }
 
-    # --- Session Manager BootExecute (T1547.001) ----------------------------
+    # --- Session Manager BootExecute (T1547.001) ---------------------------------
     $sm = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager'
     foreach ($n in 'BootExecute', 'SetupExecute', 'Execute', 'S0InitialCommand') {
         $vals = @(Get-RegValue $sm $n) | Where-Object { $_ }
         foreach ($v in $vals) {
             Add-InventoryItem $cat "$sm | $n" $v
-            # poqexec.exe applica gli aggiornamenti di Windows in sospeso
+            # poqexec.exe applies pending Windows updates
             $known = $v -match '^(?i)autocheck autochk (/q /v )?\*$' -or $v -match "^(?i)$([regex]::Escape($env:SystemRoot))\\System32\\poqexec\.exe /display_progress"
             if (-not $known) {
-                Add-Finding -Category $cat -Severity 'Medio' -Title "Session Manager $n non standard" -Detail $sm -Evidence $v -Mitre 'T1547.001' `
-                    -Reasons 'Il valore normale di BootExecute e'' "autocheck autochk *". Altri valori vengono eseguiti prima ancora di Windows (alcuni antivirus e tool di deframmentazione lo usano legittimamente).'
+                Add-Finding -Category $cat -Severity 'Medium' -Title "Non-standard Session Manager $n" -Detail $sm -Evidence $v -Mitre 'T1547.001' `
+                    -Reasons 'The normal BootExecute value is "autocheck autochk *". Other values run even before Windows (some antivirus and defrag tools use it legitimately).'
             }
         }
     }
 
-    # --- LSA: pacchetti di sicurezza / notifica password (T1547.002/.005, T1556.002)
+    # --- LSA: security / password notification packages (T1547.002/.005, T1556.002)
     $lsa = 'HKLM:\SYSTEM\CurrentControlSet\Control\Lsa'
     $knownLsa = '^(?i)(|""|msv1_0|kerberos|schannel|wdigest|tspkg|pku2u|cloudap|negoexts|livessp|scecli|rassfm|msoidssp)$'
     foreach ($n in 'Authentication Packages', 'Notification Packages', 'Security Packages') {
@@ -156,12 +156,12 @@ function Invoke-CheckPersistence {
             if ($p -notmatch $knownLsa) {
                 $dll = Join-Path "$env:SystemRoot\System32" ($p -replace '\.dll$', '')
                 Register-AutorunEntry -Category $cat -Location "$lsa ($n)" -Name $p -Command "$dll.dll" -Mitre 'T1547.005' `
-                    -ExtraScore 25 -ExtraReasons 'DLL caricata dal processo LSASS: puo'' rubare le password in chiaro ad ogni accesso.'
+                    -ExtraScore 25 -ExtraReasons 'DLL loaded by the LSASS process: it can steal plain-text passwords at every sign-in.'
             }
         }
     }
 
-    # --- Print monitors e Netsh helper (T1547.010, T1546.007) ---------------
+    # --- Print monitors and Netsh helpers (T1547.010, T1546.007) -----------------
     foreach ($k in Get-ChildItem -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Print\Monitors' -ErrorAction SilentlyContinue) {
         $drv = Get-RegValue $k.PSPath 'Driver'
         if ($drv) {
@@ -174,7 +174,7 @@ function Invoke-CheckPersistence {
         Register-AutorunEntry -Category $cat -Location 'Netsh helper DLL' -Name $v.Name -Command $full -Mitre 'T1546.007'
     }
 
-    # --- Active Setup (T1547.014) -------------------------------------------
+    # --- Active Setup (T1547.014) ------------------------------------------------
     foreach ($base in 'HKLM:\SOFTWARE\Microsoft\Active Setup\Installed Components', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Active Setup\Installed Components') {
         foreach ($k in Get-ChildItem -LiteralPath $base -ErrorAction SilentlyContinue) {
             $stub = Get-RegValue $k.PSPath 'StubPath'
@@ -185,14 +185,14 @@ function Invoke-CheckPersistence {
         }
     }
 
-    # --- Terminal Server / RDP wrapper -------------------------------------
+    # --- Terminal Server / RDP wrapper -------------------------------------------
     $ip = Get-RegValue 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' 'InitialProgram'
     if ($ip) {
         Register-AutorunEntry -Category $cat -Location 'RDP InitialProgram' -Name 'InitialProgram' -Command $ip -Mitre 'T1547' -ExtraScore 30 `
-            -ExtraReasons 'Programma eseguito automaticamente ad ogni connessione Desktop remoto'
+            -ExtraReasons 'Program run automatically at every Remote Desktop connection'
     }
 
-    # --- Cartelle Esecuzione automatica (T1547.001) -------------------------
+    # --- Startup folders (T1547.001) -----------------------------------------------
     $startupDirs = @("$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp")
     foreach ($prof in Get-ChildItem -LiteralPath "$env:SystemDrive\Users" -Directory -Force -ErrorAction SilentlyContinue) {
         $startupDirs += Join-Path $prof.FullName 'AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup'
@@ -206,20 +206,20 @@ function Invoke-CheckPersistence {
                 $lnk = Resolve-Shortcut $f.FullName
                 if ($lnk -and $lnk.Target) { $cmd = "`"$($lnk.Target)`" $($lnk.Arguments)" }
             } elseif ($f.Extension -match '^(?i)\.(vbs|vbe|js|jse|wsf|hta|bat|cmd|ps1|exe|scr|pif)$') {
-                $extraScore = 20; $extraReasons = @("File eseguibile/script copiato direttamente nella cartella Esecuzione automatica (di solito ci sono solo collegamenti .lnk)")
+                $extraScore = 20; $extraReasons = @('Executable or script copied straight into the Startup folder (normally there are only .lnk shortcuts)')
             }
-            if ($f.Attributes -band [IO.FileAttributes]::Hidden) { $extraScore += 20; $extraReasons += 'Il file nella cartella Esecuzione automatica e'' nascosto' }
+            if ($f.Attributes -band [IO.FileAttributes]::Hidden) { $extraScore += 20; $extraReasons += 'The file in the Startup folder is hidden' }
             Register-AutorunEntry -Category $cat -Location $dir -Name $f.Name -Command $cmd -Mitre 'T1547.001' `
                 -ExtraScore $extraScore -ExtraReasons $extraReasons `
                 -Remedy @{ Kind = 'File'; Path = $f.FullName; Admin = -not ($f.FullName -like "$env:USERPROFILE\*") }
         }
     }
 
-    # --- Dirottamento COM per utente (T1546.015) ----------------------------
-    # Una CLSID registrata in HKCU con lo stesso ID di una di sistema in HKLM
-    # "vince" su quella di sistema: il malware viene caricato da Explorer & co.
-    # Si usa l'API .NET: con migliaia di CLSID i cmdlet del registro impiegano minuti.
-    # Un programma registra spesso decine di CLSID con la stessa DLL: raggruppiamo per DLL.
+    # --- Per-user COM hijacking (T1546.015) -----------------------------------------
+    # A CLSID registered in HKCU with the same ID as a system one in HKLM "wins" over
+    # the system one: the malware gets loaded by Explorer and others.
+    # The .NET API is used: with thousands of CLSIDs the registry cmdlets take minutes.
+    # A program often registers dozens of CLSIDs with the same DLL: grouped by DLL.
     $hklmClsid = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey('SOFTWARE\Classes\CLSID')
     $byServer = @{}
     foreach ($hu in Get-UserHives) {
@@ -233,7 +233,7 @@ function Invoke-CheckPersistence {
                 $val = $sk.GetValue('')
                 $sk.Close()
                 if (-not $val) { continue }
-                Add-InventoryItem 'Dirottamento COM' "$clsidRoot\$id\$srv" $val
+                Add-InventoryItem 'COM hijacking' "$clsidRoot\$id\$srv" $val
                 $overrides = $false
                 if ($hklmClsid) {
                     $sys = $hklmClsid.OpenSubKey($id)
@@ -257,17 +257,17 @@ function Invoke-CheckPersistence {
         if ($info -and $info.IsMicrosoft) { continue }
         $score = $risk.Score; $why = @($risk.Reasons)
         if ($g.Overrides -gt 0 -and -not ($info -and $info.SignatureStatus -eq 'Valid')) {
-            $score += 25; $why = @("$($g.Overrides) CLSID esistono anche a livello di sistema: la versione per-utente le sovrascrive (dirottamento COM)") + $why
+            $score += 25; $why = @("$($g.Overrides) CLSIDs also exist system-wide: the per-user version overrides them (COM hijacking)") + $why
         }
         $sev = ConvertTo-Severity $score
         if ($sev -eq 'Info') { continue }
         $ids = ($g.Ids | Select-Object -First 5) -join ', '
-        if ($g.Ids.Count -gt 5) { $ids += " e altre $($g.Ids.Count - 5)" }
-        Add-Finding -Category 'Dirottamento COM' -Severity $sev -Title "Oggetto COM per-utente: $([IO.Path]::GetFileName($risk.Target))" `
+        if ($g.Ids.Count -gt 5) { $ids += " and $($g.Ids.Count - 5) more" }
+        Add-Finding -Category 'COM hijacking' -Severity $sev -Title "Per-user COM object: $([IO.Path]::GetFileName($risk.Target))" `
             -Detail "$($g.Root) - CLSID: $ids" -Path $risk.Target -Evidence $g.Command -Mitre 'T1546.015' -Reasons $why `
-            -Recommendation 'Se la DLL non appartiene a un programma che hai installato (OneDrive, Teams, Dropbox... sono normali), elimina le chiavi CLSID indicate in HKCU.'
+            -Recommendation 'If the DLL does not belong to a program you installed (OneDrive, Teams, Dropbox... are normal), delete the listed CLSID keys in HKCU.'
     }
 
-    # --- Punti di avvio meno noti (profili PowerShell, BITS, Office, Winsock...) ---
+    # --- Lesser-known autostart locations (PowerShell profiles, BITS, Office, Winsock...)
     Invoke-ExtraAutorunPoints
 }

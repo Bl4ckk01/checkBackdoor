@@ -1,8 +1,8 @@
-# Punti di avvio meno noti, che i controlli classici (Run, attivita', servizi) non vedono.
-# Li usano soprattutto gruppi APT e malware piu' curati, proprio perche' pochi li guardano.
-# Fanno parte del controllo "Persistence": li chiama Invoke-CheckPersistence.
+# Lesser-known autostart locations that the classic checks (Run, tasks, services) miss.
+# They are used mostly by APT groups and more careful malware, precisely because few
+# people look at them. Part of the "Persistence" check: Invoke-CheckPersistence calls them.
 
-# Percorso del profilo di ogni utente, per SID (dal registro ProfileList)
+# Profile path of every user, by SID (from the ProfileList registry key)
 function Get-UserProfilePaths {
     $map = @{}
     $pl = Open-RegistryKey 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList'
@@ -16,9 +16,9 @@ function Get-UserProfilePaths {
     return $map
 }
 
-# --- Cartella Esecuzione automatica spostata (T1547.001) ---------------------------
-# Windows avvia tutto cio' che trova nella cartella indicata in "User Shell Folders":
-# spostarla altrove nasconde i programmi a chi guarda la cartella solita.
+# --- Moved Startup folder (T1547.001) ---------------------------------------------------
+# Windows starts everything in the folder named in "User Shell Folders": moving it
+# elsewhere hides the programs from anyone looking at the usual folder.
 function Test-DefaultStartupFolder {
     param([string]$Raw, [string]$ProfilePath, [switch]$Common)
     if (-not $Raw) { return $true }
@@ -31,7 +31,7 @@ function Test-DefaultStartupFolder {
 }
 
 function Test-StartupFolderRedirect {
-    $cat = 'Avvio automatico'
+    $cat = 'Autostart'
     $profiles = Get-UserProfilePaths
     $targets = @()
     foreach ($hu in Get-UserHives) {
@@ -41,7 +41,7 @@ function Test-StartupFolderRedirect {
         if (-not $prof) { continue }
         $targets += [pscustomobject]@{ Key = "$($hu.Root)\Software\Microsoft\Windows\CurrentVersion\Explorer"; Name = 'Startup'; Profile = $prof; Common = $false; User = $hu.User }
     }
-    $targets += [pscustomobject]@{ Key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer'; Name = 'Common Startup'; Profile = $null; Common = $true; User = 'Tutti gli utenti' }
+    $targets += [pscustomobject]@{ Key = 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer'; Name = 'Common Startup'; Profile = $null; Common = $true; User = 'All users' }
 
     foreach ($t in $targets) {
         foreach ($sub in 'User Shell Folders', 'Shell Folders') {
@@ -53,23 +53,23 @@ function Test-StartupFolderRedirect {
             if ($t.Profile) { $dir = $dir -ireplace '%USERPROFILE%', $t.Profile -ireplace '%APPDATA%', "$($t.Profile)\AppData\Roaming" }
             $dir = [Environment]::ExpandEnvironmentVariables($dir)
             Add-InventoryItem $cat "$($t.Key)\$sub | $($t.Name)" $raw
-            Add-Finding -Category $cat -Severity 'Alto' -Title "Cartella Esecuzione automatica spostata ($($t.User))" -Detail "$($t.Key)\$sub" `
+            Add-Finding -Category $cat -Severity 'High' -Title "Startup folder moved ($($t.User))" -Detail "$($t.Key)\$sub" `
                 -Evidence "$($t.Name) = $raw" -Mitre 'T1547.001' `
-                -Reasons "Windows avvia tutto cio' che si trova in questa cartella. Spostarla altrove nasconde i programmi che partono all'accensione." `
-                -Recommendation "Riporta il valore $($t.Name) al percorso predefinito (...\Start Menu\Programs\Startup) e controlla i file nella cartella indicata."
+                -Reasons 'Windows starts everything in this folder. Moving it elsewhere hides the programs that start at boot.' `
+                -Recommendation "Set the $($t.Name) value back to the default path (...\Start Menu\Programs\Startup) and check the files in the folder it points to."
             foreach ($f in Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue) {
                 if ($f.Name -eq 'desktop.ini') { continue }
                 $cmd = "`"$($f.FullName)`""
                 if ($f.Extension -eq '.lnk') { $lnk = Resolve-Shortcut $f.FullName; if ($lnk -and $lnk.Target) { $cmd = "`"$($lnk.Target)`" $($lnk.Arguments)" } }
-                Register-AutorunEntry -Category $cat -Location "Cartella spostata: $dir" -Name $f.Name -Command $cmd -Mitre 'T1547.001' `
-                    -ExtraScore 30 -ExtraReasons 'Si trova nella cartella Esecuzione automatica spostata'
+                Register-AutorunEntry -Category $cat -Location "Moved folder: $dir" -Name $f.Name -Command $cmd -Mitre 'T1547.001' `
+                    -ExtraScore 30 -ExtraReasons 'Located in the moved Startup folder'
             }
         }
     }
 }
 
-# --- Profili PowerShell (T1546.013) --------------------------------------------------
-# Un profilo viene eseguito a ogni avvio di PowerShell, anche da parte di altri programmi.
+# --- PowerShell profiles (T1546.013) -----------------------------------------------------
+# A profile runs every time PowerShell starts, including when other programs use it.
 function Get-PowerShellProfilePaths {
     $names = 'profile.ps1', 'Microsoft.PowerShell_profile.ps1', 'Microsoft.PowerShellISE_profile.ps1', 'Microsoft.VSCode_profile.ps1'
     $dirs = New-Object System.Collections.Generic.List[string]
@@ -101,31 +101,31 @@ function Get-PowerShellProfileRisk {
         }
     }
     if ($score -gt 0 -and $Path -match '(?i)\\(System32|SysWOW64)\\WindowsPowerShell\\') {
-        $score += 15; $reasons.Add('E'' il profilo valido per tutti gli utenti: quasi nessun programma lo usa')
+        $score += 15; $reasons.Add('It is the profile for all users: almost no program uses it')
     }
     if ($evidence -and $evidence.Length -gt 200) { $evidence = $evidence.Substring(0, 200) + '...' }
     return [pscustomobject]@{ Score = $score; Reasons = $reasons.ToArray(); Evidence = $evidence }
 }
 
 function Test-PowerShellProfiles {
-    $cat = 'Avvio automatico'
+    $cat = 'Autostart'
     foreach ($p in Get-PowerShellProfilePaths) {
         $content = ''
         try { $content = [IO.File]::ReadAllText($p) } catch { continue }
         if ($content.Length -gt 262144) { $content = $content.Substring(0, 262144) }
-        Add-InventoryItem $cat "Profilo PowerShell | $p" (Get-FileSha256 $p)
+        Add-InventoryItem $cat "PowerShell profile | $p" (Get-FileSha256 $p)
         $risk = Get-PowerShellProfileRisk -Path $p -Content $content
         $sev = ConvertTo-Severity $risk.Score
         if ($sev -eq 'Info') { continue }
-        Add-Finding -Category $cat -Severity $sev -Title "Profilo PowerShell: $([IO.Path]::GetFileName($p))" -Path $p -Evidence $risk.Evidence `
-            -Mitre 'T1546.013' -Reasons (@('Il profilo viene eseguito a ogni avvio di PowerShell, anche quando lo usano altri programmi') + @($risk.Reasons)) `
-            -Recommendation "Apri il file con il Blocco note. Se non hai scritto tu quelle righe (o non vengono da uno strumento che usi, come oh-my-posh), cancellale."
+        Add-Finding -Category $cat -Severity $sev -Title "PowerShell profile: $([IO.Path]::GetFileName($p))" -Path $p -Evidence $risk.Evidence `
+            -Mitre 'T1546.013' -Reasons (@('The profile runs every time PowerShell starts, including when other programs use it') + @($risk.Reasons)) `
+            -Recommendation 'Open the file in Notepad. If you did not write those lines (and they do not come from a tool you use, such as oh-my-posh), delete them.'
     }
 }
 
-# --- Processi BITS con comando di notifica (T1197) ----------------------------------
-# Un download BITS puo' eseguire un programma quando termina, e BITS lo riprova da solo
-# per giorni: una persistenza che non compare tra i programmi in avvio automatico.
+# --- BITS jobs with a notification command (T1197) ---------------------------------------
+# A BITS download can run a program when it finishes, and BITS retries it on its own for
+# days: persistence that does not show up among the autostart programs.
 function ConvertFrom-BitsadminList {
     param([string]$Text)
     foreach ($job in ($Text -split '(?m)^(?=GUID: )')) {
@@ -137,7 +137,7 @@ function ConvertFrom-BitsadminList {
         $cmd = $raw
         $q = [regex]::Match($raw, "^'([^']*)'\s*(?:'(.*)')?$")
         if ($q.Success) { $cmd = "`"$($q.Groups[1].Value)`" $($q.Groups[2].Value)".Trim() }
-        # OWNER sta sulla stessa riga di TYPE e STATE
+        # OWNER is on the same line as TYPE and STATE
         $owner = [regex]::Match($job, 'OWNER: (\S+)')
         [pscustomobject]@{ Guid = $g.Groups[1].Value; Name = $g.Groups[2].Value; Command = $cmd; Owner = $owner.Groups[1].Value }
     }
@@ -151,20 +151,20 @@ function Test-BitsJobs {
     $text = ''
     try { $text = (& $exe @bitsArgs 2>$null) -join "`n" } catch { return }
     foreach ($j in ConvertFrom-BitsadminList $text) {
-        Register-AutorunEntry -Category 'Avvio automatico' -Location "Processo BITS $($j.Guid) ($($j.Owner))" -Name "BITS: $($j.Name)" -Command $j.Command `
-            -Mitre 'T1197' -ExtraScore 30 -ExtraReasons 'Processo BITS che esegue un comando: i programmi legittimi non lo fanno quasi mai' `
-            -Recommendation "Se non riconosci il comando, annulla il processo da un prompt amministratore con: bitsadmin /cancel $($j.Guid)"
+        Register-AutorunEntry -Category 'Autostart' -Location "BITS job $($j.Guid) ($($j.Owner))" -Name "BITS: $($j.Name)" -Command $j.Command `
+            -Mitre 'T1197' -ExtraScore 30 -ExtraReasons 'BITS job that runs a command: legitimate programs almost never do this' `
+            -Recommendation "If you do not recognise the command, cancel the job from an administrator prompt with: bitsadmin /cancel $($j.Guid)"
     }
 }
 
-# --- AppCertDlls (T1546.009) e database di compatibilita' (T1546.011) ----------------
+# --- AppCertDlls (T1546.009) and shim databases (T1546.011) -------------------------------
 function Test-AppCertAndShims {
-    $cat = 'Avvio automatico'
+    $cat = 'Autostart'
     $acd = 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\AppCertDlls'
     foreach ($v in Get-RegValues $acd) {
         if ($v.Value -isnot [string] -or -not $v.Value) { continue }
         Register-AutorunEntry -Category $cat -Location $acd -Name $v.Name -Command "`"$($v.Value)`"" -Mitre 'T1546.009' `
-            -ExtraScore 40 -ExtraReasons 'AppCertDlls carica la DLL in ogni programma che avvia altri programmi: nessun software comune la usa'
+            -ExtraScore 40 -ExtraReasons 'AppCertDlls loads the DLL into every program that starts other programs: no common software uses it'
     }
     foreach ($base in 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags', 'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows NT\CurrentVersion\AppCompatFlags') {
         $k = Open-RegistryKey "$base\InstalledSDB"
@@ -174,21 +174,21 @@ function Test-AppCertAndShims {
             $db = if ($s) { [string]$s.GetValue('DatabasePath') }
             if (-not $db) { continue }
             $desc = [string]$s.GetValue('DatabaseDescription')
-            $title = if ($desc) { "Database di compatibilita': $desc" } else { "Database di compatibilita' $g" }
+            $title = if ($desc) { "Shim database: $desc" } else { "Shim database $g" }
             Add-InventoryItem $cat "$base\InstalledSDB | $g" $db
-            # I file .sdb non si possono firmare: conta dove si trovano. In AppPatch li mette
-            # sdbinst, che richiede l'amministratore (anche IIS Express ne installa due).
+            # .sdb files cannot be signed: what matters is where they are. sdbinst puts them
+            # in AppPatch and needs administrator rights (IIS Express installs two).
             $inAppPatch = $db -like "$env:SystemRoot\AppPatch\*"
-            $sev = if ($inAppPatch) { 'Basso' } else { 'Alto' }
-            $why = @("Database di compatibilita' installato a parte: puo' far caricare una DLL dentro altri programmi")
-            if (-not $inAppPatch) { $why += "Si trova fuori dalla cartella AppPatch di Windows, dove sdbinst li installa" }
+            $sev = if ($inAppPatch) { 'Low' } else { 'High' }
+            $why = @('Custom shim database: it can make other programs load a DLL')
+            if (-not $inAppPatch) { $why += 'Located outside the Windows AppPatch folder, where sdbinst installs them' }
             Add-Finding -Category $cat -Severity $sev -Title $title -Detail "$base\InstalledSDB\$g" -Path $db -Mitre 'T1546.011' -Reasons $why `
-                -Recommendation "Se riconosci il programma nel nome (ad esempio IIS Express o un gioco vecchio) e' normale. Altrimenti rimuovilo da un prompt amministratore con: sdbinst -u `"$db`""
+                -Recommendation "If you recognise the program in the name (for example IIS Express or an old game) it is normal. Otherwise remove it from an administrator prompt with: sdbinst -u `"$db`""
         }
     }
 }
 
-# --- Office (T1137) -----------------------------------------------------------------------
+# --- Office (T1137) ------------------------------------------------------------------------
 function Get-ComServerPath {
     param([string]$ProgId)
     $classes = [Microsoft.Win32.Registry]::ClassesRoot
@@ -202,17 +202,17 @@ function Get-ComServerPath {
 }
 
 function Test-OfficePersistence {
-    $cat = 'Avvio automatico'
-    $roots = @([pscustomobject]@{ Root = 'HKLM:'; User = 'Tutti gli utenti' }) + @(Get-UserHives)
+    $cat = 'Autostart'
+    $roots = @([pscustomobject]@{ Root = 'HKLM:'; User = 'All users' }) + @(Get-UserHives)
     foreach ($r in $roots) {
-        # "Office test": carica una DLL a ogni avvio di Office, esiste solo per i test di Microsoft
+        # "Office test": loads a DLL every time Office starts; it exists only for Microsoft's tests
         $ot = Open-RegistryKey "$($r.Root)\Software\Microsoft\Office test\Special\Perf"
         if ($ot -and $ot.GetValue('')) {
             Register-AutorunEntry -Category $cat -Location "$($r.Root)\Software\Microsoft\Office test\Special\Perf" -Name 'Office test' `
                 -Command "`"$($ot.GetValue(''))`"" -Mitre 'T1137.002' -ExtraScore 50 `
-                -ExtraReasons "La chiave 'Office test' carica una DLL a ogni avvio di Office: serve solo ai test di Microsoft ed e' usata da gruppi APT"
+                -ExtraReasons 'The "Office test" key loads a DLL every time Office starts: it exists only for Microsoft tests and is used by APT groups'
         }
-        # Componenti aggiuntivi COM e VSTO
+        # COM and VSTO add-ins
         foreach ($app in 'Word', 'Excel', 'PowerPoint', 'Outlook') {
             foreach ($wow in '', 'WOW6432Node\') {
                 $ak = Open-RegistryKey "$($r.Root)\Software\$($wow)Microsoft\Office\$app\Addins"
@@ -225,18 +225,18 @@ function Test-OfficePersistence {
                     $manifest = [string]$s.GetValue('Manifest')
                     $loc = "$($r.Root)\Software\$($wow)Microsoft\Office\$app\Addins"
                     if ($manifest) {
-                        # I manifest VSTO non sono firmabili come file: solo inventario
+                        # VSTO manifests cannot be signed as files: inventory only
                         Add-InventoryItem $cat "$loc | $id" $manifest
                     } else {
                         $srv = Get-ComServerPath $id
-                        if ($srv) { Register-AutorunEntry -Category $cat -Location $loc -Name "Componente di $($app): $id" -Command "`"$srv`"" -Mitre 'T1137.006' }
-                        else { Add-InventoryItem $cat "$loc | $id" '(server COM non trovato)' }
+                        if ($srv) { Register-AutorunEntry -Category $cat -Location $loc -Name "$app add-in: $id" -Command "`"$srv`"" -Mitre 'T1137.006' }
+                        else { Add-InventoryItem $cat "$loc | $id" '(COM server not found)' }
                     }
                 }
             }
         }
         if ($r.Root -eq 'HKLM:') { continue }
-        # Componenti aggiuntivi di Excel caricati all'avvio (OPEN, OPEN1...)
+        # Excel add-ins loaded at startup (OPEN, OPEN1...)
         $off = Open-RegistryKey "$($r.Root)\Software\Microsoft\Office"
         if (-not $off) { continue }
         foreach ($ver in $off.GetSubKeyNames() | Where-Object { $_ -match '^\d+\.\d+$' }) {
@@ -245,25 +245,25 @@ function Test-OfficePersistence {
             foreach ($n in $opt.GetValueNames() | Where-Object { $_ -match '^OPEN\d*$' }) {
                 $path = ([string]$opt.GetValue($n) -replace '^/[A-Za-z]\s+', '').Trim('"', ' ')
                 Register-AutorunEntry -Category $cat -Location "$($r.Root)\Software\Microsoft\Office\$ver\Excel\Options" -Name "Excel $n" `
-                    -Command "`"$path`"" -Mitre 'T1137.006' -ExtraScore 10 -ExtraReasons 'Componente aggiuntivo caricato a ogni avvio di Excel'
+                    -Command "`"$path`"" -Mitre 'T1137.006' -ExtraScore 10 -ExtraReasons 'Add-in loaded every time Excel starts'
             }
         }
     }
-    # File aperti da soli all'avvio di Word ed Excel (modelli e componenti con macro)
+    # Files that Word and Excel open on their own at startup (templates and add-ins with macros)
     foreach ($prof in Get-ChildItem -LiteralPath "$env:SystemDrive\Users" -Directory -Force -ErrorAction SilentlyContinue) {
         foreach ($sub in 'Microsoft\Word\STARTUP', 'Microsoft\Excel\XLSTART') {
             $dir = Join-Path $prof.FullName "AppData\Roaming\$sub"
             foreach ($f in Get-ChildItem -LiteralPath $dir -File -Force -ErrorAction SilentlyContinue) {
                 Register-AutorunEntry -Category $cat -Location $dir -Name $f.Name -Command "`"$($f.FullName)`"" -Mitre 'T1137.001' `
-                    -ExtraReasons "Office apre questo file da solo a ogni avvio: puo' contenere macro"
+                    -ExtraReasons 'Office opens this file on its own at every start: it may contain macros'
             }
         }
     }
 }
 
-# --- Provider Winsock (T1547) ------------------------------------------------------------
-# Una DLL registrata come provider di rete viene caricata da ogni programma che usa
-# internet e ne vede il traffico.
+# --- Winsock providers (T1547) ---------------------------------------------------------------
+# A DLL registered as a network provider is loaded by every program that uses the internet
+# and sees its traffic.
 function ConvertFrom-PackedCatalogItem {
     param([byte[]]$Bytes)
     if (-not $Bytes) { return $null }
@@ -298,10 +298,10 @@ function Test-WinsockProviders {
     foreach ($p in $paths.Values) {
         $info = Get-FileInfo $p
         $extra = 0; $why = @()
-        if ($info.Exists -and -not $info.IsMicrosoft) { $extra = 15; $why = @('Provider di rete non Microsoft: viene caricato da ogni programma che usa internet') }
-        Register-AutorunEntry -Category 'Avvio automatico' -Location 'Provider Winsock' -Name ([IO.Path]::GetFileName($p)) -Command "`"$p`"" `
+        if ($info.Exists -and -not $info.IsMicrosoft) { $extra = 15; $why = @('Non-Microsoft network provider: it is loaded by every program that uses the internet') }
+        Register-AutorunEntry -Category 'Autostart' -Location 'Winsock provider' -Name ([IO.Path]::GetFileName($p)) -Command "`"$p`"" `
             -Mitre 'T1547' -ExtraScore $extra -ExtraReasons $why `
-            -Recommendation 'Se la DLL non appartiene a una VPN, a un firewall o a un antivirus che hai installato, ripristina Winsock con "netsh winsock reset" da un prompt amministratore.'
+            -Recommendation 'If the DLL does not belong to a VPN, firewall or antivirus you installed, reset Winsock with "netsh winsock reset" from an administrator prompt.'
     }
 }
 

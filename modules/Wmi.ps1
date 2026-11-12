@@ -1,11 +1,11 @@
-# Sottoscrizioni WMI permanenti (T1546.003): persistenza "senza file" che non
-# compare ne' nelle chiavi Run ne' nelle attivita' pianificate.
+# Permanent WMI subscriptions (T1546.003): "fileless" persistence that shows up neither
+# in the Run keys nor among scheduled tasks.
 
 function Invoke-CheckWmi {
     $cat = 'WMI'
     if (-not $script:IsAdmin) {
-        Add-Finding -Category $cat -Severity 'Info' -Title 'Controllo WMI incompleto' `
-            -Reasons 'Per leggere le sottoscrizioni WMI servono i privilegi di amministratore.'
+        Add-Finding -Category $cat -Severity 'Info' -Title 'WMI check incomplete' `
+            -Reasons 'Reading WMI subscriptions requires administrator rights.'
     }
     $ns = 'root\subscription'
     $filters   = @(Get-CimInstance -Namespace $ns -ClassName __EventFilter -ErrorAction SilentlyContinue)
@@ -21,7 +21,7 @@ function Invoke-CheckWmi {
             default { $payload = $cls }
         }
         Add-InventoryItem $cat "$cls | $($c.Name)" $payload
-        # Il consumer "SCM Event Log Consumer" (NTEventLogEventConsumer) e' di Windows
+        # The "SCM Event Log Consumer" (NTEventLogEventConsumer) belongs to Windows
         if ($cls -notin 'CommandLineEventConsumer', 'ActiveScriptEventConsumer') { continue }
 
         $bound = @($bindings | Where-Object { $_.Consumer.Name -eq $c.Name })
@@ -31,10 +31,10 @@ function Invoke-CheckWmi {
             if ($f) { $filterText += "$($f.Name): $($f.Query)" }
         }
         $risk = Get-CommandRisk $payload
-        Add-Finding -Category $cat -Severity 'Alto' -Title "Sottoscrizione WMI che esegue codice: $($c.Name)" `
-            -Detail "Consumer $cls$(if ($filterText) { ' - attivata da: ' + ($filterText -join ' | ') })" `
+        Add-Finding -Category $cat -Severity 'High' -Title "WMI subscription that runs code: $($c.Name)" `
+            -Detail "Consumer $cls$(if ($filterText) { ' - triggered by: ' + ($filterText -join ' | ') })" `
             -Path $risk.Target -Evidence $payload -Mitre 'T1546.003' -Sha256 $risk.Sha256 `
-            -Reasons (@('Esegue un comando o uno script quando si verifica un evento di sistema (avvio, logon, timer). Sui PC domestici e'' quasi sempre malevolo.') + $risk.Reasons) `
-            -Recommendation "Rimuovi filtro, consumer e binding da PowerShell amministratore: Get-CimInstance -Namespace root\subscription -ClassName CommandLineEventConsumer -Filter `"Name='$($c.Name)'`" | Remove-CimInstance (e lo stesso per __EventFilter e __FilterToConsumerBinding)."
+            -Reasons (@('Runs a command or script when a system event happens (startup, sign-in, timer). On home PCs it is almost always malicious.') + $risk.Reasons) `
+            -Recommendation "Remove the filter, consumer and binding from an administrator PowerShell: Get-CimInstance -Namespace root\subscription -ClassName CommandLineEventConsumer -Filter `"Name='$($c.Name)'`" | Remove-CimInstance (and the same for __EventFilter and __FilterToConsumerBinding)."
     }
 }

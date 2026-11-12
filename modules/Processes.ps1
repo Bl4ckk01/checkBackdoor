@@ -1,8 +1,8 @@
-# Processi in esecuzione: travestimenti da processi di sistema (T1036),
-# genitori anomali, eseguibili non firmati in cartelle utente, cryptominer.
+# Running processes: disguises as system processes (T1036), odd parents, unsigned
+# executables in user folders, cryptominers.
 
 function Invoke-CheckProcesses {
-    $cat = 'Processi'
+    $cat = 'Processes'
     $sys32 = "$env:SystemRoot\System32".ToLower()
     $wow64 = "$env:SystemRoot\SysWOW64".ToLower()
     $expected = @{
@@ -18,7 +18,7 @@ function Invoke-CheckProcesses {
     $legitNear = '^(?i)(iexplore|taskhost|svchost|services|lsass|csrss|explorer|winlogon|wininit|spoolsv|dllhost|conhost|sihost|ctfmon|smss|dwm|userinit|audiodg|rundll32|regsvr32|searchindexer|runtimebroker|fontdrvhost|lsaiso|taskhostw|wmiprvse|wmiadap|service|servicehost)$'
 
     $procs = Get-ProcessTable
-    # Lo scanner stesso (e chi l'ha avviato) usa powershell -ExecutionPolicy Bypass: non va segnalato
+    # The scanner itself (and whoever started it) uses powershell -ExecutionPolicy Bypass: not reported
     $selfChain = @{}
     $cur = $PID
     for ($n = 0; $n -lt 2 -and $cur; $n++) {
@@ -34,35 +34,35 @@ function Invoke-CheckProcesses {
         $parent = $procs[[int]$p.ParentProcessId]
         $evidence = "PID $($p.ProcessId) - $path $(if ($p.CommandLine) { '| ' + $p.CommandLine })"
 
-        # 1) Nome di sistema ma percorso sbagliato
+        # 1) System name but wrong location
         if ($path -and $expected.ContainsKey($name)) {
             $dir = [IO.Path]::GetDirectoryName($path).ToLower()
             if ($dir -notin $expected[$name]) {
                 $info = Get-FileInfo $path
-                Add-Finding -Category $cat -Severity 'Alto' -Title "Processo travestito da $($p.Name)" -Path $path -Evidence $evidence `
+                Add-Finding -Category $cat -Severity 'High' -Title "Process disguised as $($p.Name)" -Path $path -Evidence $evidence `
                     -Mitre 'T1036.005' -Sha256 $info.Sha256 -Signer $info.Signer `
-                    -Reasons "Il vero $($p.Name) si trova solo in $($expected[$name] -join ' o '). Questo gira da un'altra cartella." `
-                    -Recommendation 'Termina il processo, carica il file su virustotal.com e cerca quale voce di avvio lo lancia (vedi le altre sezioni del report).'
+                    -Reasons "The real $($p.Name) only lives in $($expected[$name] -join ' or '). This one runs from another folder." `
+                    -Recommendation 'End the process, upload the file to virustotal.com and find which autostart entry launches it (see the other sections of the report).'
                 continue
             }
         }
 
-        # 2) Nome quasi identico a un processo di sistema (svch0st, lsas, scvhost...)
+        # 2) Name almost identical to a system process (svch0st, lsas, scvhost...)
         $base = $name -replace '\.exe$', ''
         if ($base.Length -ge 4 -and $base -notmatch $legitNear) {
             foreach ($t in $lookalikeTargets) {
                 if ((Get-EditDistance $base $t) -eq 1) {
                     $info = Get-FileInfo $path
                     if ($info -and $info.IsMicrosoft) { break }
-                    Add-Finding -Category $cat -Severity 'Alto' -Title "Nome che imita un processo di sistema: $($p.Name) (simile a $t.exe)" `
+                    Add-Finding -Category $cat -Severity 'High' -Title "Name imitating a system process: $($p.Name) (similar to $t.exe)" `
                         -Path $path -Evidence $evidence -Mitre 'T1036.005' -Sha256 $info.Sha256 -Signer $info.Signer `
-                        -Reasons 'I malware scelgono nomi quasi identici a quelli di Windows per non dare nell''occhio in Gestione attivita''.'
+                        -Reasons 'Malware picks names almost identical to Windows ones so as not to stand out in Task Manager.'
                     break
                 }
             }
         }
 
-        # 3) Genitore anomalo
+        # 3) Odd parent
         if ($parent -and $parent.CreationDate -le $p.CreationDate) {
             $pname = "$($parent.Name)".ToLower()
             $badParent = $null
@@ -70,43 +70,42 @@ function Invoke-CheckProcesses {
             elseif ($name -eq 'lsass.exe' -and $pname -ne 'wininit.exe') { $badParent = 'wininit.exe' }
             elseif ($name -eq 'services.exe' -and $pname -ne 'wininit.exe') { $badParent = 'wininit.exe' }
             if ($badParent) {
-                Add-Finding -Category $cat -Severity 'Alto' -Title "$($p.Name) avviato da un processo insolito ($($parent.Name))" -Path $path `
-                    -Evidence "$evidence | genitore: PID $($parent.ProcessId) $($parent.ExecutablePath)" -Mitre 'T1036' `
-                    -Reasons "Normalmente $($p.Name) viene avviato solo da $badParent."
+                Add-Finding -Category $cat -Severity 'High' -Title "$($p.Name) started by an unusual process ($($parent.Name))" -Path $path `
+                    -Evidence "$evidence | parent: PID $($parent.ProcessId) $($parent.ExecutablePath)" -Mitre 'T1036' `
+                    -Reasons "Normally $($p.Name) is started only by $badParent."
             }
-            # Office / browser che lanciano interpreti di comandi
+            # Office / document readers launching command interpreters
             if ($pname -match '^(winword|excel|powerpnt|outlook|acrord32|wordpad)\.exe$' -and $name -match '^(powershell|pwsh|cmd|wscript|cscript|mshta|rundll32|regsvr32)\.exe$') {
-                Add-Finding -Category $cat -Severity 'Alto' -Title "$($parent.Name) ha avviato $($p.Name)" -Path $path -Evidence $evidence -Mitre 'T1204.002' `
-                    -Reasons 'Un documento che apre un interprete di comandi e'' il comportamento tipico di una macro malevola.'
+                Add-Finding -Category $cat -Severity 'High' -Title "$($parent.Name) started $($p.Name)" -Path $path -Evidence $evidence -Mitre 'T1204.002' `
+                    -Reasons 'A document that opens a command interpreter is the typical behaviour of a malicious macro.'
             }
         }
 
-        # 4) Un solo lsass e' ammesso
+        # 4) Only one lsass is allowed
         if ($name -eq 'lsass.exe' -and $byName['lsass.exe'].Count -gt 1) {
-            Add-Finding -Category $cat -Severity 'Alto' -Title 'Piu'' di un processo lsass.exe in esecuzione' -Path $path -Evidence $evidence -Mitre 'T1036.005' `
-                -Reasons 'Deve esistere un solo lsass.exe: le copie servono a rubare credenziali o a mimetizzarsi.'
+            Add-Finding -Category $cat -Severity 'High' -Title 'More than one lsass.exe process running' -Path $path -Evidence $evidence -Mitre 'T1036.005' `
+                -Reasons 'There must be only one lsass.exe: copies are used to steal credentials or to blend in.'
         }
 
-        # 5) Riga di comando o eseguibile sospetti. Un programma non firmato in
-        # AppData da solo e' comunissimo (plugin, launcher...): serve un indizio forte.
+        # 5) Suspicious command line or executable. An unsigned program in AppData on its
+        # own is very common (plugins, launchers...): a strong clue is needed.
         if (($p.CommandLine -or $path) -and -not $selfChain.ContainsKey([int]$p.ProcessId)) {
             $cmd = $p.CommandLine; if (-not $cmd) { $cmd = "`"$path`"" }
             $risk = Get-CommandRisk $cmd
             $sev = ConvertTo-Severity $risk.Score
             $patternHit = @($script:SuspiciousPatterns | Where-Object { $risk.Reasons -contains $_.R }).Count -gt 0
-            $strong = $patternHit -or ($risk.Reasons -match 'nascosto|casuale|manomessa') -or
+            $strong = $patternHit -or ($risk.Reasons -match 'hidden|Random-looking|Tampered') -or
                 ($risk.Target -match '(?i)\\Temp\\|\\Users\\Public\\|\\\$Recycle\.Bin\\|^[A-Z]:\\ProgramData\\[^\\]+$|\\AppData\\(Roaming|Local|LocalLow)\\[^\\]+$')
-            if ($sev -in 'Alto', 'Medio' -and $strong) {
-                Add-Finding -Category $cat -Severity $sev -Title "Processo sospetto: $($p.Name) (PID $($p.ProcessId))" -Path $risk.Target `
+            if ($sev -in 'High', 'Medium' -and $strong) {
+                Add-Finding -Category $cat -Severity $sev -Title "Suspicious process: $($p.Name) (PID $($p.ProcessId))" -Path $risk.Target `
                     -Evidence $cmd -Mitre 'T1059' -Reasons $risk.Reasons -Sha256 $risk.Sha256 -Signer $risk.Signer `
-                    -Recommendation 'Controlla in Gestione attivita'' (tasto destro > Apri percorso file) e carica il file su virustotal.com.'
+                    -Recommendation 'Check it in Task Manager (right click > Open file location) and upload the file to virustotal.com.'
             }
         }
     }
 
-    # 6) Uso CPU: i miner consumano CPU in modo costante. Campioniamo per qualche
-    # secondo (Gestione attivita' non e' aperta, quindi i miner "furbi" che si
-    # fermano quando la apri qui continuano a lavorare).
+    # 6) CPU usage: miners use the CPU constantly. Sampled for a few seconds (Task Manager
+    # is not open, so "smart" miners that pause when you open it keep working here).
     $samples = @{}
     $cores = [Environment]::ProcessorCount
     $first = @{}
@@ -124,11 +123,11 @@ function Invoke-CheckProcesses {
         if (-not $p -or -not $p.ExecutablePath) { continue }
         $info = Get-FileInfo $p.ExecutablePath
         if ($info.IsMicrosoft) { continue }
-        $sev = 'Basso'; $why = @("Usa il $pct% della CPU totale mentre il PC e' a riposo")
-        if ($info.SignatureStatus -ne 'Valid') { $sev = 'Medio'; $why += 'Non firmato' }
-        if ($info.SignatureStatus -ne 'Valid' -and (Test-UserWritablePath $p.ExecutablePath)) { $sev = 'Alto'; $why += 'Gira da una cartella utente' }
-        Add-Finding -Category $cat -Severity $sev -Title "Alto consumo di CPU: $($p.Name) ($pct%)" -Path $p.ExecutablePath -Evidence $p.CommandLine `
-            -Mitre 'T1496' -Reasons (@('Possibile cryptominer.') + $why) -Sha256 $info.Sha256 -Signer $info.Signer `
-            -Recommendation "Se in quel momento non stavi usando quel programma, verificalo su virustotal.com. Nota: un consumo alto durante giochi, compilazioni o aggiornamenti e' normale."
+        $sev = 'Low'; $why = @("Uses $pct% of total CPU while the PC is idle")
+        if ($info.SignatureStatus -ne 'Valid') { $sev = 'Medium'; $why += 'Not signed' }
+        if ($info.SignatureStatus -ne 'Valid' -and (Test-UserWritablePath $p.ExecutablePath)) { $sev = 'High'; $why += 'Runs from a user folder' }
+        Add-Finding -Category $cat -Severity $sev -Title "High CPU usage: $($p.Name) ($pct%)" -Path $p.ExecutablePath -Evidence $p.CommandLine `
+            -Mitre 'T1496' -Reasons (@('Possible cryptominer.') + $why) -Sha256 $info.Sha256 -Signer $info.Signer `
+            -Recommendation 'If you were not using that program at the time, check it on virustotal.com. Note: high usage during games, builds or updates is normal.'
     }
 }
