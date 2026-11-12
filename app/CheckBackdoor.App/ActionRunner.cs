@@ -7,7 +7,7 @@ using System.Text.Json.Nodes;
 namespace CheckBackdoor.App;
 
 /// <summary>
-/// Esegue Azioni.ps1 ("Disattiva" con backup, "Annulla"). Quando la modifica tocca parti del
+/// Esegue Actions.ps1 ("Disattiva" con backup, "Annulla"). Quando la modifica tocca parti del
 /// sistema (HKLM, attivita', servizi) lo lancia come amministratore: Windows mostra la sua
 /// richiesta, e l'esito torna in un file JSON.
 /// </summary>
@@ -17,8 +17,12 @@ public static class ActionRunner
     {
         Directory.CreateDirectory(AppPaths.RunsDir);
         var req = Path.Combine(AppPaths.RunsDir, $"azione-{Guid.NewGuid():N}.json");
-        File.WriteAllText(req, request.ToJsonString());
-        return RunAsync(["-RequestFile", req, "-BackupDir", AppPaths.BackupDir], admin, req);
+        var bytes = new UTF8Encoding(false).GetBytes(request.ToJsonString());
+        File.WriteAllBytes(req, bytes);
+        // L'impronta viaggia nella riga di comando, che dopo la conferma di Windows non cambia
+        // piu': se un altro programma sostituisce il file della richiesta, lo script si rifiuta
+        var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
+        return RunAsync(["-RequestFile", req, "-RequestSha256", sha, "-BackupDir", AppPaths.BackupDir], admin, req);
     }
 
     public static Task<JsonObject> UndoAsync(string backupFile) =>
@@ -32,17 +36,17 @@ public static class ActionRunner
         all.Add("-ResultFile"); all.Add(result);
         try
         {
-            if (!File.Exists(AppPaths.ActionsScript)) return Fail("Manca Azioni.ps1 accanto al programma: probabilmente e' in quarantena nell'antivirus.");
+            if (!File.Exists(AppPaths.ActionsScript)) return Fail("Manca Actions.ps1 accanto al programma: probabilmente e' in quarantena nell'antivirus.");
             ProcessStartInfo psi;
             if (admin)
             {
                 // "runas" passa per ShellExecute: niente ArgumentList, gli argomenti vanno quotati a mano
-                psi = new ProcessStartInfo("powershell.exe", string.Join(' ', all.Select(Quote)))
+                psi = new ProcessStartInfo(AppPaths.PowerShellExe, string.Join(' ', all.Select(Quote)))
                 { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
             }
             else
             {
-                psi = new ProcessStartInfo("powershell.exe") { UseShellExecute = false, CreateNoWindow = true };
+                psi = new ProcessStartInfo(AppPaths.PowerShellExe) { UseShellExecute = false, CreateNoWindow = true };
                 foreach (var a in all) psi.ArgumentList.Add(a);
             }
             using var p = Process.Start(psi) ?? throw new InvalidOperationException("PowerShell non e' partito.");
@@ -104,7 +108,7 @@ public static class Scheduler
     public static bool Create(int day, int hour)
     {
         day = Math.Clamp(day, 0, 6); hour = Math.Clamp(hour, 0, 23);
-        var ps = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), @"WindowsPowerShell\v1.0\powershell.exe");
+        var ps = AppPaths.PowerShellExe;
         var args = string.Join(' ',
             "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File", Q(AppPaths.EngineScript),
             "-NoElevate -Quiet -NoOpen -CompareLast -OutputDir", Q(AppPaths.ReportsDir),

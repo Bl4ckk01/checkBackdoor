@@ -36,7 +36,7 @@ public sealed class ScanRunner : IDisposable
         EventsPath = Path.Combine(runsDir, $"scan-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}.jsonl");
         File.WriteAllText(EventsPath, "");
 
-        var psi = new ProcessStartInfo("powershell.exe")
+        var psi = new ProcessStartInfo(AppPaths.PowerShellExe)
         {
             UseShellExecute = false,
             CreateNoWindow = true,

@@ -78,12 +78,16 @@ public static class IgnoreStore
         return root["items"] as JsonArray ?? [];
     }
 
-    public static void Add(string id, string? title, string? category)
+    /// <summary>
+    /// sha256: impronta del file al momento della scelta. Il motore smette di ignorare
+    /// l'elemento se il file cambia: "ignora" vale per quel file, non per quel percorso.
+    /// </summary>
+    public static void Add(string id, string? title, string? category, string? sha256)
     {
         var root = Load();
         var items = root["items"] as JsonArray ?? [];
         if (items.Any(i => (string?)i?["id"] == id)) return;
-        items.Add(new JsonObject { ["id"] = id, ["title"] = title, ["category"] = category, ["date"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm") });
+        items.Add(new JsonObject { ["id"] = id, ["title"] = title, ["category"] = category, ["sha256"] = sha256, ["date"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm") });
         Save(items);
     }
 
@@ -121,8 +125,11 @@ public static class BackupStore
     public static JsonArray List(int max = 50)
     {
         var list = new JsonArray();
-        if (!Directory.Exists(AppPaths.BackupDir)) return list;
-        foreach (var f in new DirectoryInfo(AppPaths.BackupDir).GetFiles("*.json").OrderByDescending(f => f.Name).Take(max))
+        // Due cartelle: quella dell'utente e quella protetta dei backup fatti come amministratore
+        var files = new[] { AppPaths.BackupDir, AppPaths.ProtectedBackupDir }
+            .Where(Directory.Exists)
+            .SelectMany(d => { try { return new DirectoryInfo(d).GetFiles("*.json"); } catch (Exception) { return Array.Empty<FileInfo>(); } });
+        foreach (var f in files.OrderByDescending(f => f.Name).Take(max))
         {
             try
             {
@@ -141,12 +148,16 @@ public static class BackupStore
         return list;
     }
 
-    /// <summary>Se annullare richiede l'amministratore (come la modifica originale).</summary>
-    public static bool NeedsAdmin(string backupFile)
-    {
-        try { return JsonNode.Parse(File.ReadAllText(backupFile))?["Remedy"]?["Admin"]?.GetValue<bool>() != false; }
-        catch (Exception) { return true; }
-    }
+    /// <summary>Vero se il file e' un backup di una delle due cartelle di CheckBackdoor.</summary>
+    public static bool IsBackupFile(string? file) =>
+        AppPaths.IsInside(file, AppPaths.BackupDir) || AppPaths.IsInside(file, AppPaths.ProtectedBackupDir);
+
+    /// <summary>
+    /// Se annullare richiede l'amministratore. Lo decide la cartella, non il contenuto del
+    /// file: solo i backup della cartella protetta si ripristinano con quei privilegi, perche'
+    /// quelli nel profilo dell'utente li puo' riscrivere qualsiasi programma.
+    /// </summary>
+    public static bool NeedsAdmin(string backupFile) => AppPaths.IsInside(backupFile, AppPaths.ProtectedBackupDir);
 }
 
 /// <summary>Impostazioni dell'app (per ora: il giorno della verifica programmata).</summary>

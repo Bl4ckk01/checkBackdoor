@@ -14,6 +14,34 @@ Uno strumento che si esegue come amministratore è un bersaglio ideale per copie
   e verificare che non scarichi né invii nulla. L'unica connessione possibile è verso VirusTotal,
   e solo se fornisci tu una chiave API (`-VirusTotalApiKey`).
 
+## Dove tenerlo
+
+Quando chiede i privilegi di amministratore, CheckBackdoor esegue i propri file con quei
+privilegi. Se stanno in una cartella che qualsiasi programma può modificare (Download,
+Desktop, AppData), un malware già presente sul PC può riscriverli e ottenere i privilegi alla
+prossima verifica.
+
+- L'installatore mette il programma in `Program Files`, che solo gli amministratori possono
+  modificare: è il modo consigliato.
+- Se usi lo zip o gli script, estraili in una cartella protetta allo stesso modo, oppure
+  esegui la verifica senza privilegi (`-NoElevate`): sarà meno completa, ma nessun file
+  modificabile verrà eseguito come amministratore.
+- Le release hanno un'attestazione di provenienza. Per verificare un file scaricato:
+  ```powershell
+  gh attestation verify .\CheckBackdoor-<versione>-setup.exe --repo <proprietario>/<repository>
+  ```
+
+## Cosa non si fida di cosa
+
+- **Lista bianca.** `allowlist.local.json` e gli elementi ignorati dall'app sono file
+  dell'utente: un malware può scriverci. Le regole troppo ampie non vengono applicate e
+  compaiono tra le segnalazioni, e il report elenca sempre ciò che è stato nascosto.
+- **"Disattiva" e "Annulla".** Agiscono solo su chiavi di avvio, cartelle Esecuzione
+  automatica, attività non di Windows e servizi non di Microsoft né dell'antivirus. Come
+  amministratore i backup si scrivono e si leggono solo in `%ProgramData%\CheckBackdoor\backup`.
+- **Report.** I nomi di file e i comandi che contiene li sceglie chi ha scritto il malware:
+  sono sempre mostrati come testo, e una Content-Security-Policy blocca ogni altro script.
+
 ## Segnalare una vulnerabilità
 
 Se trovi un problema di sicurezza nello scanner, segnalalo in privato con la funzione

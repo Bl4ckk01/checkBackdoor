@@ -2,11 +2,13 @@
 <html lang="it">
 <head>
 <meta charset="utf-8">
+<!-- Solo i file dell'app e, nell'iframe, i report: nessuno script in linea, nessuna richiesta di rete -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; frame-src https://report.checkbackdoor.example; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="referrer" content="no-referrer">
 <title>CheckBackdoor</title>
-<script>document.documentElement.className='js';try{var t=localStorage.getItem('checkbackdoor-theme');if(t==='dark'||t==='light')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
+<script src="theme.js"></script>
 <link rel="stylesheet" href="app.css">
 </head>
 <body>

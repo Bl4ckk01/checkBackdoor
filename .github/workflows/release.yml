@@ -7,17 +7,22 @@ on:
   push:
     tags: ['v*']
 
+# Le action sono fissate al commit (il numero di versione e' nel commento): un tag come "v4"
+# puo' essere spostato su altro codice, un commit no. id-token e attestations servono
+# all'attestazione di provenienza dei file della release.
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   release:
     runs-on: windows-latest
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4.3.1
         with:
           dotnet-version: 10.0.x
 
@@ -26,7 +31,7 @@ jobs:
         run: |
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
-          choco install innosetup -y --no-progress
+          choco install innosetup --version 6.7.1 -y --no-progress
 
       - name: Il tag corrisponde alla versione
         shell: powershell
@@ -48,6 +53,15 @@ jobs:
           }
           .\tools\Build-Release.ps1 @sign
           if ($pfx) { Remove-Item $pfx -Force }
+
+      # Chi scarica puo' verificare che il file e' stato costruito qui, da questo commit:
+      #   gh attestation verify CheckBackdoor-<versione>-setup.exe --repo <proprietario>/<repository>
+      - name: Attestazione di provenienza
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: |
+            dist/*.zip
+            dist/*.exe
 
       - name: Bozza della release
         shell: powershell

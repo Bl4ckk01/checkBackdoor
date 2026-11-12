@@ -92,13 +92,15 @@ function Export-Results {
 
     $timeline = $null
     if ($script:TimelineRan) { $timeline = @($script:Timeline | Sort-Object Time -Descending) }
-    $json = [ordered]@{ Meta = $Meta; Findings = $sorted; Inventory = $script:Inventory; Timeline = $timeline } | ConvertTo-Json -Depth 6
+    # Cio' che la lista bianca ha nascosto resta nel report: una lista ritoccata non passa inosservata
+    $ignored = @($script:Ignored | Sort-Object { $script:SeverityOrder[$_.Severity] }, Category, Title)
+    $json = [ordered]@{ Meta = $Meta; Findings = $sorted; Ignored = $ignored; Inventory = $script:Inventory; Timeline = $timeline } | ConvertTo-Json -Depth 6
     [IO.File]::WriteAllText("$base.json", $json, (New-Object Text.UTF8Encoding($false)))
 
     $sorted | Select-Object Id, Severity, Category, Title, Path, Evidence, @{ n = 'Reasons'; e = { $_.Reasons -join ' | ' } }, Mitre, Sha256, Signer, Recommendation |
         Export-Csv -LiteralPath "$base.csv" -NoTypeInformation -Encoding UTF8 -Delimiter ';'
 
-    $html = New-HtmlReport -Findings $sorted -Meta $Meta -Timeline $timeline
+    $html = New-HtmlReport -Findings $sorted -Meta $Meta -Timeline $timeline -Ignored $ignored
     [IO.File]::WriteAllText("$base.html", $html, (New-Object Text.UTF8Encoding($false)))
     return "$base.html"
 }
@@ -457,8 +459,22 @@ $script:ReportJs = @'
 })();
 '@
 
+# Dentro l'app il report e' in un iframe: niente barra propria, tema passato nell'indirizzo (#theme=dark)
+$script:ReportHeadJs = @'
+var r=document.documentElement;r.className='js'+(window.self!==window.top?' embedded':'');try{var m=location.hash.match(/theme=(dark|light)/),t=m?m[1]:localStorage.getItem('checkbackdoor-theme');if(t==='dark'||t==='light')r.setAttribute('data-theme',t)}catch(e){}
+'@
+
+# Impronta di uno script per la Content-Security-Policy del report: il browser esegue solo
+# gli script con queste impronte. Il testo del report e' gia' trasformato in testo semplice;
+# questa e' la seconda barriera, se un giorno sfuggisse un nome scelto da un attaccante.
+function Get-CspScriptHash {
+    param([string]$Script)
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return "'sha256-$([Convert]::ToBase64String($sha.ComputeHash((New-Object Text.UTF8Encoding($false)).GetBytes($Script))))'" } finally { $sha.Dispose() }
+}
+
 function New-HtmlReport {
-    param($Findings, [hashtable]$Meta, $Timeline)
+    param($Findings, [hashtable]$Meta, $Timeline, $Ignored)
     $e = { param($t) ConvertTo-HtmlText $t }
     $p = { param($t) ConvertTo-HtmlText $t -Prose }
     $Findings = @($Findings)
@@ -500,11 +516,15 @@ function New-HtmlReport {
     $add = { param($s) [void]$sb.Append($s) }
 
     $title = if ($fileMode) { "Controllo di $target" } else { "Verifica di $($Meta.Computer)" }
-    & $add "<!doctype html>`n<html lang=""it""><head><meta charset=""utf-8""><meta name=""viewport"" content=""width=device-width,initial-scale=1"">"
+    # Il browser legge i ritorni a capo come LF: le impronte si calcolano sullo stesso testo
+    $headJs = $script:ReportHeadJs -replace "`r`n", "`n"
+    $bodyJs = $script:ReportJs -replace "`r`n", "`n"
+    $csp = "default-src 'none'; script-src $(Get-CspScriptHash $headJs) $(Get-CspScriptHash $bodyJs); style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
+    & $add "<!doctype html>`n<html lang=""it""><head><meta charset=""utf-8""><meta http-equiv=""Content-Security-Policy"" content=""$csp"">"
+    & $add "<meta name=""viewport"" content=""width=device-width,initial-scale=1"">"
     & $add "<meta name=""color-scheme"" content=""light dark""><meta name=""referrer"" content=""no-referrer"">"
     & $add "<title>$(& $e $title) - CheckBackdoor</title>"
-    # Dentro l'app il report e' in un iframe: niente barra propria, tema passato nell'indirizzo (#theme=dark)
-    & $add "<script>var r=document.documentElement;r.className='js'+(window.self!==window.top?' embedded':'');try{var m=location.hash.match(/theme=(dark|light)/),t=m?m[1]:localStorage.getItem('checkbackdoor-theme');if(t==='dark'||t==='light')r.setAttribute('data-theme',t)}catch(e){}</script>"
+    & $add "<script>$headJs</script>"
     & $add "<style>$script:ReportCss</style></head><body>"
 
     # Barra superiore: prodotto, PC esaminato, tema
@@ -665,6 +685,23 @@ function New-HtmlReport {
         & $add '</section>'
     }
 
+    # Elementi nascosti dalla lista bianca: chiusi, ma sempre elencati con la regola che li nasconde
+    $hidden = @($Ignored | Where-Object { $_ })
+    if ($hidden) {
+        $maxHidden = 200
+        & $add "<section class=""list tl"" aria-labelledby=""ig-h""><details><summary class=""list-head""><h2 id=""ig-h"">Nascosti dalla lista bianca<span class=""count"">$($hidden.Count)</span></h2><span class=""tl-note"">Controlla di riconoscerli tutti</span></summary>"
+        & $add '<p class="tl-more">Questi elementi non compaiono tra le segnalazioni perch&eacute; corrispondono alla lista bianca o li hai ignorati dall''app. Se ne vedi uno che non hai scelto tu, qualcuno ha modificato la lista: toglilo e ripeti la verifica.</p><ol class="tl-rows">'
+        foreach ($h in ($hidden | Select-Object -First $maxHidden)) {
+            $path = ''; if ($h.Path) { $path = "<code>$(& $e $h.Path)</code>" }
+            # Colonna stretta: solo il tipo di regola ("percorso", "titolo"...); la regola intera sotto il titolo
+            $kind = ("$($h.Rule)" -split ' ')[0]
+            & $add "<li class=""tl-row""><span class=""tl-src"">$(& $p $h.Category)</span><span class=""tl-src"">$(& $e $kind)</span><span class=""tl-what"">$(& $p $h.Title)$path<code>Regola: $(& $e $h.Rule)</code></span></li>"
+        }
+        & $add '</ol>'
+        if ($hidden.Count -gt $maxHidden) { & $add "<p class=""tl-more"">Altri $($hidden.Count - $maxHidden) elementi nel file JSON.</p>" }
+        & $add '</details></section>'
+    }
+
     # Cosa fare e limiti
     & $add @'
 <div class="guide"><section aria-labelledby="g1"><h2 id="g1">Se trovi qualcosa</h2><ol>
@@ -682,8 +719,8 @@ function New-HtmlReport {
     $privacy = 'Report creato su questo PC: nessun dato della scansione &egrave; stato inviato.'
     if ($Meta.VirusTotal) { $privacy = 'Report creato su questo PC: solo le impronte SHA-256 dei file segnalati sono state inviate a VirusTotal.' }
     $ignored = ''
-    if ($Meta.Ignored) { $ignored = " $($Meta.Ignored) elementi nascosti dalla lista bianca." }
+    if ($Meta.Ignored) { $ignored = " $($Meta.Ignored) elementi nascosti dalla lista bianca$(if ($hidden) { ', elencati qui sopra' })." }
     & $add "<footer class=""foot"">CheckBackdoor $(& $e $Meta.Version). $privacy$ignored</footer>"
-    & $add "<script>$script:ReportJs</script></body></html>"
+    & $add "<script>$bodyJs</script></body></html>"
     return $sb.ToString()
 }

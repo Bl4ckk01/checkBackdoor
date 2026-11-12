@@ -47,32 +47,104 @@ function Write-ScanWarning {
 # comparire elementi che poi spariscono dal report.
 # ---------------------------------------------------------------------------
 
-$script:Allowlist = @{ Paths = @(); Hashes = @(); Titles = @(); Ids = @() }
+#
+# La lista bianca e' anche il posto piu' comodo per nascondersi: sono file che qualsiasi
+# programma dell'utente puo' riscrivere. Per questo le regole troppo ampie non si
+# applicano e vengono segnalate, un elemento ignorato dall'app torna visibile se il file
+# cambia, e tutto cio' che viene nascosto resta elencato nel report.
+
+$script:Allowlist = @{ Paths = @(); Hashes = @(); Titles = @(); Ids = @{} }
+$script:AllowlistRejected = New-Object System.Collections.Generic.List[object]
+$script:Ignored = New-Object System.Collections.Generic.List[object]
 $script:IgnoredCount = 0
+$script:AllowlistCategory = 'Lista bianca'
+
+# Vero se la regola nasconderebbe intere parti del PC invece di un programma preciso:
+# troppo poco testo fisso (es. "*", "*.exe", "C:\*") oppure, per i percorsi, una regola
+# che copre da sola una cartella dove i malware si installano.
+function Test-BroadAllowlistRule {
+    param([string]$Rule, [switch]$IsPath)
+    $literal = ($Rule -replace '[\*\?\[\]]', '') -replace '^[A-Za-z]:', ''
+    if ($literal.Trim('\ ').Length -lt 6) { return $true }
+    if ($IsPath) {
+        $user = "$env:SystemDrive\Users\qualcuno"
+        $canaries = @(
+            "$user\AppData\Roaming\canarino.exe", "$user\AppData\Local\canarino.exe", "$user\AppData\Local\Temp\canarino.exe"
+            "$user\Downloads\canarino.exe", "$user\Desktop\canarino.exe", "$env:SystemDrive\Users\Public\canarino.exe"
+            "$env:ProgramData\canarino.exe", "$env:SystemRoot\canarino.exe", "$env:SystemRoot\System32\canarino.exe"
+            "$env:SystemRoot\Temp\canarino.exe", "$env:ProgramFiles\canarino.exe"
+        )
+        foreach ($c in $canaries) { if ($c -like $Rule) { return $true } }
+    }
+    return $false
+}
 
 function Import-Allowlist {
     param([string[]]$Path)
-    $script:Allowlist = @{ Paths = @(); Hashes = @(); Titles = @(); Ids = @() }
+    $script:Allowlist = @{ Paths = @(); Hashes = @(); Titles = @(); Ids = @{} }
+    $script:AllowlistRejected = New-Object System.Collections.Generic.List[object]
     foreach ($p in $Path) {
         if (-not $p -or -not (Test-Path -LiteralPath $p)) { continue }
         try { $al = [IO.File]::ReadAllText($p) | ConvertFrom-Json } catch { Write-ScanWarning "$([IO.Path]::GetFileName($p)) non valido: $($_.Exception.Message)"; continue }
-        $script:Allowlist.Paths += @($al.paths | Where-Object { $_ })
+        foreach ($rule in @($al.paths | Where-Object { $_ })) {
+            if (Test-BroadAllowlistRule "$rule" -IsPath) { $script:AllowlistRejected.Add([pscustomobject]@{ File = $p; Kind = 'percorso'; Rule = "$rule" }) }
+            else { $script:Allowlist.Paths += "$rule" }
+        }
+        foreach ($rule in @($al.titles | Where-Object { $_ })) {
+            if (Test-BroadAllowlistRule "$rule") { $script:AllowlistRejected.Add([pscustomobject]@{ File = $p; Kind = 'titolo'; Rule = "$rule" }) }
+            else { $script:Allowlist.Titles += "$rule" }
+        }
         $script:Allowlist.Hashes += @($al.sha256 | Where-Object { $_ } | ForEach-Object { "$_".ToUpperInvariant() })
-        $script:Allowlist.Titles += @($al.titles | Where-Object { $_ })
-        # "ids": elementi ignorati dall'app, uno per uno (l'ID di Get-FindingId)
-        $script:Allowlist.Ids += @($al.ids | Where-Object { $_ } | ForEach-Object { "$_".ToLowerInvariant() })
+        # "ids": elementi ignorati dall'app, uno per uno (l'ID di Get-FindingId). In "items"
+        # l'app annota anche l'impronta che il file aveva quando e' stato ignorato.
+        foreach ($id in @($al.ids | Where-Object { $_ })) {
+            $k = "$id".ToLowerInvariant()
+            if (-not $script:Allowlist.Ids.ContainsKey($k)) { $script:Allowlist.Ids[$k] = $null }
+        }
+        foreach ($it in @($al.items | Where-Object { $_ -and $_.id -and $_.sha256 })) {
+            $script:Allowlist.Ids["$($it.id)".ToLowerInvariant()] = "$($it.sha256)".ToUpperInvariant()
+        }
     }
+}
+
+# Vero se l'elemento era stato ignorato dall'app ma il suo file non e' piu' lo stesso
+function Test-IgnoredFileChanged {
+    param($Finding)
+    if (-not $Finding.Id -or -not $Finding.Sha256) { return $false }
+    $pinned = $script:Allowlist.Ids["$($Finding.Id)".ToLowerInvariant()]
+    return [bool]($pinned -and $pinned -ne "$($Finding.Sha256)".ToUpperInvariant())
+}
+
+# La regola della lista bianca che nasconde la segnalazione, o $null
+function Get-AllowlistMatch {
+    param($Finding)
+    if ($Finding.Category -eq $script:AllowlistCategory) { return $null }
+    foreach ($p in $script:Allowlist.Paths) {
+        if (($Finding.Path -and $Finding.Path -like $p) -or ($Finding.Evidence -and $Finding.Evidence -like $p)) { return "percorso $p" }
+    }
+    if ($Finding.Sha256 -and $script:Allowlist.Hashes -contains "$($Finding.Sha256)".ToUpperInvariant()) { return 'impronta SHA-256' }
+    foreach ($t in $script:Allowlist.Titles) { if ($Finding.Title -like $t) { return "titolo $t" } }
+    if ($Finding.Id -and $script:Allowlist.Ids.ContainsKey("$($Finding.Id)".ToLowerInvariant()) -and -not (Test-IgnoredFileChanged $Finding)) {
+        return "ignorato dall'app"
+    }
+    return $null
 }
 
 function Test-Allowlisted {
     param($Finding)
-    foreach ($p in $script:Allowlist.Paths) {
-        if (($Finding.Path -and $Finding.Path -like $p) -or ($Finding.Evidence -and $Finding.Evidence -like $p)) { return $true }
+    return [bool](Get-AllowlistMatch $Finding)
+}
+
+# Le regole scartate diventano segnalazioni: se non le ha scritte l'utente, qualcuno ha
+# provato a far sparire dei risultati.
+function Add-AllowlistFindings {
+    foreach ($r in $script:AllowlistRejected) {
+        Add-Finding -Category $script:AllowlistCategory -Severity 'Medio' -Title "Regola della lista bianca troppo ampia, non applicata: $($r.Rule)" `
+            -Detail $r.File -Evidence "$($r.Kind): $($r.Rule)" -Mitre 'T1562.001' `
+            -Reasons @("Questa regola nasconderebbe intere cartelle o quasi ogni segnalazione, non un programma preciso: non e' stata applicata.",
+                "Se non l'hai scritta tu, qualcuno ha modificato la lista bianca per far sparire dei risultati.") `
+            -Recommendation "Apri il file indicato e togli la regola, oppure sostituiscila con il percorso completo del programma o con la sua impronta SHA-256."
     }
-    if ($Finding.Sha256 -and $script:Allowlist.Hashes -contains "$($Finding.Sha256)".ToUpperInvariant()) { return $true }
-    foreach ($t in $script:Allowlist.Titles) { if ($Finding.Title -like $t) { return $true } }
-    if ($Finding.Id -and $script:Allowlist.Ids -contains "$($Finding.Id)".ToLowerInvariant()) { return $true }
-    return $false
 }
 
 # ID stabile di una segnalazione: lo stesso elemento ha lo stesso ID in ogni
@@ -135,7 +207,16 @@ function Add-Finding {
         VirusTotal     = $null
         Remedy         = $Remedy
     }
-    if (Test-Allowlisted $finding) { $script:IgnoredCount++; return }
+    $rule = Get-AllowlistMatch $finding
+    if ($rule) {
+        # Nascosto, ma non senza traccia: il report elenca cosa e' stato scartato e perche'
+        $script:IgnoredCount++
+        $script:Ignored.Add([pscustomobject]@{ Id = $finding.Id; Category = $Category; Severity = $Severity; Title = $Title; Path = $Path; Sha256 = $finding.Sha256; Rule = $rule })
+        return
+    }
+    if (Test-IgnoredFileChanged $finding) {
+        $finding.Reasons = @("Avevi scelto di ignorare questo elemento, ma il file non e' piu' lo stesso di allora: va ricontrollato.") + @($finding.Reasons)
+    }
     $script:Findings.Add($finding)
     Write-ScanEvent 'finding' ([ordered]@{ check = $script:CurrentCheck; finding = $finding })
 }

@@ -183,6 +183,58 @@ Describe 'Add-Finding con eventi e lista bianca' {
         $script:Findings.Count | Should -Be 1
         $script:Findings[0].Title | Should -Be 'Altra voce'
     }
+    It 'elenca cio'' che nasconde, con la regola che lo nasconde' {
+        $script:Ignored.Clear()
+        Add-Finding -Category 'Avvio automatico' -Severity 'Medio' -Title 'Per percorso' -Path 'C:\Sicuro\x.exe'
+        $script:Ignored | Should -HaveCount 1
+        $script:Ignored[0].Title | Should -Be 'Per percorso'
+        $script:Ignored[0].Rule | Should -Be 'percorso C:\Sicuro\*'
+    }
+    It 'non applica e segnala una regola troppo ampia: <Rule>' -ForEach @(
+        @{ Json = '{ "paths": ["*"] }'; Rule = '*' }
+        @{ Json = '{ "paths": ["*.exe"] }'; Rule = '*.exe' }
+        @{ Json = '{ "paths": ["C:\\*"] }'; Rule = 'C:\*' }
+        @{ Json = '{ "paths": ["*\\AppData\\*"] }'; Rule = '*\AppData\*' }
+        @{ Json = '{ "paths": ["C:\\ProgramData\\*"] }'; Rule = 'C:\ProgramData\*' }
+        @{ Json = '{ "titles": ["*a*"] }'; Rule = '*a*' }
+    ) {
+        $al = Join-Path $TestDrive 'ampia.json'
+        Set-Content -LiteralPath $al -Value $Json
+        Import-Allowlist -Path $al
+        Add-AllowlistFindings
+        Add-Finding -Category 'Avvio automatico' -Severity 'Medio' -Title 'Malware.exe' -Path "$env:ProgramData\malware.exe"
+        $script:Findings | Should -HaveCount 2
+        $script:Findings[0].Category | Should -Be 'Lista bianca'
+        $script:Findings[0].Title | Should -BeLike "*troppo ampia*$Rule"
+    }
+    It 'non si puo'' nascondere l''avviso sulla lista bianca con la lista bianca' {
+        $al = Join-Path $TestDrive 'furba.json'
+        Set-Content -LiteralPath $al -Value '{ "paths": ["*"], "titles": ["Regola della lista bianca*"] }'
+        Import-Allowlist -Path $al
+        Add-AllowlistFindings
+        $script:Findings | Should -HaveCount 1
+    }
+    It 'accetta una regola per la cartella di un programma' {
+        Test-BroadAllowlistRule "$env:APPDATA\Spotify\*" -IsPath | Should -BeFalse
+        Test-BroadAllowlistRule 'C:\Program Files\Gioco\gioco.exe' -IsPath | Should -BeFalse
+    }
+    It 'smette di ignorare un elemento se il file e'' cambiato' {
+        $f = Join-Path $TestDrive 'ignorato.exe'
+        Set-Content -LiteralPath $f -Value 'prima' -NoNewline
+        $sha = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash
+        $id = Get-FindingId 'Avvio automatico' 'Programma ignorato' $f $null
+        $app = Join-Path $TestDrive 'ignorati-hash.json'
+        Set-Content -LiteralPath $app -Value (@{ ids = @($id); items = @(@{ id = $id; sha256 = $sha.ToLowerInvariant() }) } | ConvertTo-Json -Depth 4)
+        Import-Allowlist -Path $app
+        Add-Finding -Category 'Avvio automatico' -Severity 'Medio' -Title 'Programma ignorato' -Path $f
+        $script:Findings | Should -HaveCount 0
+
+        Set-Content -LiteralPath $f -Value 'sostituito' -NoNewline
+        $script:FileCache.Clear()
+        Add-Finding -Category 'Avvio automatico' -Severity 'Medio' -Title 'Programma ignorato' -Path $f
+        $script:Findings | Should -HaveCount 1
+        $script:Findings[0].Reasons[0] | Should -Match 'non e'' piu'' lo stesso'
+    }
     It 'legge la chiave di VirusTotal cifrata con DPAPI, come la salva l''app' {
         Add-Type -AssemblyName System.Security
         $blob = [Security.Cryptography.ProtectedData]::Protect([Text.Encoding]::UTF8.GetBytes('chiave-di-prova'), $script:SecretEntropy, 'CurrentUser')

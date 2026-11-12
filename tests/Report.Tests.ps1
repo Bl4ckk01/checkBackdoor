@@ -77,6 +77,19 @@ Describe 'New-HtmlReport' {
     }
 }
 
+Describe 'Elementi nascosti dalla lista bianca nel report' {
+    It 'li elenca con la regola, come testo' {
+        $hidden = @([pscustomobject]@{ Id = 'a1'; Category = 'Avvio automatico'; Severity = 'Medio'; Title = '<b>Nascosto</b>'; Path = 'C:\Sicuro\x.exe'; Rule = 'percorso C:\Sicuro\*' })
+        $html = New-HtmlReport -Findings @() -Meta (New-TestMeta) -Ignored $hidden
+        $html | Should -Match 'id="ig-h"'
+        $html | Should -Match '&lt;b&gt;Nascosto&lt;/b&gt;'
+        $html | Should -Match ([regex]::Escape('percorso C:\Sicuro\*'))
+    }
+    It 'non mostra la sezione se non e'' stato nascosto nulla' {
+        New-HtmlReport -Findings @() -Meta (New-TestMeta) | Should -Not -Match 'id="ig-h"'
+    }
+}
+
 Describe 'Azioni nel report' {
     It 'offre Disattiva solo agli elementi che si possono annullare, e Ignora mai agli Info' {
         $con = New-TestFinding -Title 'Con azione' -Path 'C:\Users\x\AppData\a.exe'

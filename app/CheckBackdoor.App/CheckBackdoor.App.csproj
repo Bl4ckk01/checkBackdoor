@@ -21,7 +21,7 @@
   <!-- Il motore di scansione (PowerShell) viaggia accanto all'app, nella cartella engine\ -->
   <ItemGroup>
     <None Include="..\..\CheckBackdoor.ps1" Link="engine\CheckBackdoor.ps1" CopyToOutputDirectory="PreserveNewest" />
-    <None Include="..\..\Azioni.ps1" Link="engine\Azioni.ps1" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\Actions.ps1" Link="engine\Actions.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\allowlist.json" Link="engine\allowlist.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\modules\*.ps1" Link="engine\modules\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
     <!-- L'interfaccia: HTML, CSS e JS serviti a WebView2 da una cartella locale -->

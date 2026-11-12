@@ -60,7 +60,7 @@ if (-not $SkipTests) {
 Write-Host '2/5 Pubblicazione dell''app' -ForegroundColor Cyan
 & dotnet publish $csproj -c Release -r win-x64 --self-contained true -p:PublishReadyToRun=true -o $pub -nologo
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish non riuscito.' }
-foreach ($need in 'CheckBackdoor.exe', 'ui\index.html', 'engine\CheckBackdoor.ps1', 'engine\Azioni.ps1', 'engine\modules\Common.ps1') {
+foreach ($need in 'CheckBackdoor.exe', 'ui\index.html', 'engine\CheckBackdoor.ps1', 'engine\Actions.ps1', 'engine\modules\Common.ps1') {
     if (-not (Test-Path -LiteralPath (Join-Path $pub $need))) { throw "Manca $need nell'app pubblicata." }
 }
 Get-ChildItem -LiteralPath $pub -Filter '*.pdb' -Recurse | Remove-Item -Force
@@ -107,7 +107,7 @@ New-Zip $pub (Join-Path $dist "CheckBackdoor-$version-win-x64.zip")
 # Solo il motore, per chi preferisce lo script: stessi file della repository, firmati se c'e' il certificato
 $scriptDir = Join-Path $dist "CheckBackdoor-$version-script"
 New-Item -ItemType Directory -Path (Join-Path $scriptDir 'modules') -Force | Out-Null
-foreach ($f in 'CheckBackdoor.ps1', 'Azioni.ps1', 'Avvia-Scansione.bat', 'Controlla-File.bat', 'allowlist.json', 'LICENSE', 'README.md', 'README.en.md', 'SECURITY.md', 'CHANGELOG.md') {
+foreach ($f in 'CheckBackdoor.ps1', 'Actions.ps1', 'Start-Scan.bat', 'Check-File.bat', 'allowlist.json', 'LICENSE', 'README.md', 'README.en.md', 'SECURITY.md', 'CHANGELOG.md') {
     $src = Join-Path $root $f
     if (Test-Path -LiteralPath $src) { Copy-Item -LiteralPath $src -Destination $scriptDir }
 }

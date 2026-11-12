@@ -213,7 +213,7 @@ public partial class MainWindow : Window
 
     async Task UndoAsync(string? file)
     {
-        if (file is null || !AppPaths.IsInside(file, AppPaths.BackupDir) || !File.Exists(file)) return;
+        if (file is null || !BackupStore.IsBackupFile(file) || !File.Exists(file)) return;
         var r = await ActionRunner.UndoAsync(file);
         Post(Notice((string?)r["message"] ?? "", r["ok"]?.GetValue<bool>() == true));
         SendSettings();
@@ -237,7 +237,7 @@ public partial class MainWindow : Window
                 else Reply("Il file non esiste più.", false);
                 break;
             case "ignore":
-                IgnoreStore.Add(id, title, (string?)f["Category"]);
+                IgnoreStore.Add(id, title, (string?)f["Category"], (string?)f["Sha256"]);
                 Reply("Sarà ignorato nelle prossime verifiche. Puoi ripristinarlo dalle impostazioni.", true);
                 break;
             case "disable":
@@ -251,6 +251,17 @@ public partial class MainWindow : Window
                     _ => "",
                 };
                 var admin = remedy["Admin"]?.GetValue<bool>() != false;
+                // Titolo e bersaglio arrivano dallo stesso file del report: si mostra anche cio' che
+                // verra' toccato davvero, cosi' un titolo ingannevole non basta a far disattivare altro
+                var target = (string?)remedy["Kind"] switch
+                {
+                    "RegistryValue" => $"{(string?)remedy["Key"]}\nvoce: {(string?)remedy["Name"]}",
+                    "File" => (string?)remedy["Path"],
+                    "ScheduledTask" => $"attività {(string?)remedy["Path"]}{(string?)remedy["Name"]}",
+                    "Service" => $"servizio {(string?)remedy["Name"]}",
+                    _ => null,
+                };
+                if (target is not null) what += $"\n\nElemento che verrà modificato:\n{target}\n";
                 var answer = MessageBox.Show(this, $"Disattivare \"{title}\"?\n\n{what}\nPotrai annullare in qualsiasi momento dalle impostazioni." +
                     (admin ? "\n\nWindows chiederà i privilegi di amministratore." : ""), "CheckBackdoor", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (answer != MessageBoxResult.Yes) break;

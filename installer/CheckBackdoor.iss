@@ -1,7 +1,8 @@
 ; Installatore di CheckBackdoor (Inno Setup 6). Lo compila tools\Build-Release.ps1:
 ;   ISCC.exe /DAppVersion=1.2.0 /DSourceDir=<app pubblicata> /DOutputDir=<dist> /DRootDir=<repository>
-; Installa per l'utente corrente, senza privilegi di amministratore, in
-; %LOCALAPPDATA%\Programs\CheckBackdoor. Report, backup e impostazioni stanno in
+; Installa in Program Files (servono i privilegi di amministratore): il motore viene
+; eseguito come amministratore, quindi i suoi file devono stare dove un programma
+; dell'utente non puo' modificarli. Report, backup e impostazioni stanno in
 ; %LOCALAPPDATA%\CheckBackdoor e restano dopo la disinstallazione (servono per "Annulla").
 
 #ifndef AppVersion
@@ -14,10 +15,13 @@ AppName=CheckBackdoor
 AppVersion={#AppVersion}
 AppVerName=CheckBackdoor {#AppVersion}
 AppPublisher=The CheckBackdoor contributors
-DefaultDirName={localappdata}\Programs\CheckBackdoor
+DefaultDirName={autopf}\CheckBackdoor
+; Chi aveva la versione per utente in %LOCALAPPDATA% non deve restare li': quella cartella
+; la puo' modificare qualsiasi programma, e il motore viene poi eseguito come amministratore
+UsePreviousAppDir=no
 DisableProgramGroupPage=yes
-DisableDirPage=auto
-PrivilegesRequired=lowest
+DisableDirPage=yes
+PrivilegesRequired=admin
 OutputDir={#OutputDir}
 OutputBaseFilename=CheckBackdoor-{#AppVersion}-setup
 Compression=lzma2/max
