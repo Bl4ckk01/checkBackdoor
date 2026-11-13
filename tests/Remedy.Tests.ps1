@@ -1,6 +1,13 @@
 # "Disable" and "Undo" actions on a test key in HKCU and on files in TestDrive:
 # they do not touch the real startup locations of the PC.
 
+BeforeDiscovery {
+    # -Skip is decided while the tests are discovered, before BeforeAll loads the modules:
+    # $script:IsAdmin does not exist yet at that point
+    $runAsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole(
+        [Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     . (Get-ModuleScript Common)
@@ -81,13 +88,18 @@ Describe 'Trusted backups for the administrator' {
     It 'rejects a backup in a subfolder of the protected one' {
         Test-TrustedBackupFile (Join-Path $script:ProtectedBackupDir 'sub\x.json') | Should -Match 'any program can change'
     }
-    It 'rejects a file in the protected folder that is not owned by an administrator' -Skip:$script:IsAdmin {
+    It 'rejects a file in the protected folder that is not owned by an administrator' {
         New-Item -ItemType Directory -Path $script:ProtectedBackupDir -Force | Out-Null
         $f = Join-Path $script:ProtectedBackupDir 'left-by-others.json'
         Set-Content -LiteralPath $f -Value '{}'
+        # Owned by the current user, also when the tests run as administrator (where new
+        # files would belong to the Administrators group)
+        $acl = New-Object Security.AccessControl.FileSecurity
+        $acl.SetOwner([Security.Principal.WindowsIdentity]::GetCurrent().User)
+        Set-ItemSecurity -Path $f -Acl $acl
         Test-TrustedBackupFile $f | Should -Match 'not written by an administrator'
     }
-    It 'as administrator saves to the protected folder and undoes from there' -Skip:(-not $script:IsAdmin) {
+    It 'as administrator saves to the protected folder and undoes from there' -Skip:(-not $runAsAdmin) {
         New-Item -Path $script:TestKey -Force | Out-Null
         New-ItemProperty -LiteralPath $script:TestKey -Name 'Protected' -Value 'C:\x.exe' -Force | Out-Null
         $done = Invoke-RemedyDisable -Request (New-Request @{ Kind = 'RegistryValue'; Key = $script:TestKey; Name = 'Protected' }) -BackupDir $script:Backups
