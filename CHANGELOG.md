@@ -13,6 +13,9 @@ versions are the same.
   `Medium`, `Low` and `Info`. Reports from earlier versions are not shown in the app history.
 - Command-line analysis moved from `Common.ps1` to its own module, `CommandRisk.ps1`.
 
+### Fixed
+- The report subtitle glued the date and the Windows version together without a separator.
+
 ### Security
 - **Install to Program Files** (administrator needed): the engine runs as administrator, so it
   must not live in a folder a user program can change. PowerShell is started by its full path.

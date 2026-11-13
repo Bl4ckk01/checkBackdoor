@@ -511,7 +511,8 @@ function New-HtmlReport {
     & $add "<button class=""theme"" type=""button"" aria-label=""Change theme"">$($script:Icons.Moon)$($script:Icons.Sun)</button></div></header>"
 
     # Title and linked files
-    $subParts = if ($fileMode) { @("Checked before opening on $($Meta.Date)", [string]$Meta.Target) } else { @("Scan of $($Meta.Date)") }
+    # @() keeps a list even with one element: otherwise += would glue the strings together
+    $subParts = @(if ($fileMode) { "Checked before opening on $($Meta.Date)"; [string]$Meta.Target } else { "Scan of $($Meta.Date)" })
     if ($Meta.OS) { $subParts += $Meta.OS }
     if ($Meta.Deep) { $subParts += 'deep scan' }
     & $add "<main class=""page""><div class=""title-row""><div><h1>$(& $e $title)</h1><p class=""sub"">$(($subParts | ForEach-Object { & $e $_ }) -join ' &middot; ')</p></div>"

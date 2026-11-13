@@ -49,6 +49,11 @@ Describe 'New-HtmlReport' {
     It 'marks the area of a skipped check as not run' {
         $html | Should -Match 'data-area="WMI"[^>]*><span class="a-name">WMI</span><span class="a-meta">[^<]*</span><span class="a-state s-off">Not run'
     }
+    It 'separates date, Windows version and scan type in the subtitle' {
+        $meta = New-TestMeta
+        $meta.OS = 'Windows 11 Pro'; $meta.Deep = $true
+        New-HtmlReport -Findings @() -Meta $meta | Should -Match 'Scan of 2026-01-01 10:00 &middot; Windows 11 Pro &middot; deep scan'
+    }
     It 'links the JSON and CSV files of the same scan' {
         $html | Should -Match 'href="a\.json"'
         $html | Should -Match 'href="a\.csv"'

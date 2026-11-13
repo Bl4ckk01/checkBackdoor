@@ -11,6 +11,10 @@ made for people who downloaded executables, cracks or games from unofficial sour
 - A readable **HTML** report, plus **JSON** and **CSV**. The report works offline: opening it
   makes no request to the internet.
 
+![The HTML report of a scan, with the verdict, the severity filters, the areas checked and a high-risk finding opened](docs/images/report.png)
+
+*A report with invented example data.*
+
 > **Warning.** CheckBackdoor is a second opinion, not an antivirus. It looks for the traces a
 > backdoor leaves to start and communicate, but a rootkit that is already active can hide from
 > Windows itself. "No clues" **does not guarantee** that the PC is clean: if you have good
@@ -20,7 +24,7 @@ made for people who downloaded executables, cracks or games from unofficial sour
 
 ## Download
 
-From the **Releases** page:
+From the [**Releases**](../../releases) page:
 
 | File | What it is |
 |---|---|
@@ -31,6 +35,11 @@ From the **Releases** page:
 
 If the files are not signed, Windows SmartScreen shows a warning: choose *More info* and then
 *Run anyway*, only after checking the hash.
+
+If there is no release yet, use **Code → Download ZIP** on this page and extract it: it contains
+the script version, ready for the quick start below. Extract it to a folder that only
+administrators can change (see [SECURITY.md](SECURITY.md)), because the scan runs its files
+as administrator.
 
 ## Quick start
 
@@ -48,6 +57,8 @@ powershell -ExecutionPolicy Bypass -File .\CheckBackdoor.ps1
 ### App with an interface
 
 In `app\` there is the Windows app. It offers:
+
+![The app home: the verdict of the last scan, the area to drop a file to check and the previous scans](docs/images/app.png)
 
 - the Home with the latest verdict;
 - the scan in progress, with the areas ticking off live and a Cancel button;
@@ -270,6 +281,7 @@ docs/
   HOW-THEY-HIDE.md       hiding techniques and sources
   EVENTS.md              event format between engine and app
   VALIDATION.md          how to measure detections in a virtual machine
+  images/                screenshots for this README (invented example data)
 tests/                   Pester tests (see "Development and tests")
 ```
 
