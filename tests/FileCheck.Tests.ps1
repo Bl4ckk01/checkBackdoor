@@ -1,10 +1,11 @@
-# Controllo di un file prima di aprirlo, su file costruiti nella cartella TestDrive.
-# L'eseguibile di prova e' un vero programma .NET non firmato, compilato al volo:
-# non viene mai eseguito, serve solo come file da analizzare.
+# Checking a file before opening it, on files built in the TestDrive folder.
+# The test executable is a real unsigned .NET program, compiled on the fly:
+# it is never run, it is only a file to analyze.
 
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     . (Get-ModuleScript Common)
+    . (Get-ModuleScript CommandRisk)
     . (Get-ModuleScript FileCheck)
 
     $fx = Join-Path $TestDrive 'fixtures'
@@ -16,7 +17,7 @@ BeforeAll {
 
     function New-Copy([string]$Name) { $p = Join-Path $fx $Name; Copy-Item -LiteralPath $script:App -Destination $p; $p }
 
-    # Rinomina la prima sezione dell'eseguibile, come fanno i compressori (UPX0)
+    # Renames the first section of the executable, as packers do (UPX0)
     function Set-FirstSectionName([string]$Path, [string]$Name) {
         $b = [IO.File]::ReadAllBytes($Path)
         $pe = [BitConverter]::ToInt32($b, 0x3C)
@@ -35,23 +36,23 @@ BeforeAll {
 }
 
 Describe 'Get-PeInfo' {
-    It 'riconosce un eseguibile .NET' {
+    It 'recognizes a .NET executable' {
         $pe = Get-PeInfo $script:App
         $pe | Should -Not -BeNullOrEmpty
         $pe.IsDotNet | Should -BeTrue
         $pe.Sections.Name | Should -Contain '.text'
     }
-    It 'riconosce un eseguibile nativo a 64 bit' {
+    It 'recognizes a native 64-bit executable' {
         $pe = Get-PeInfo "$env:SystemRoot\System32\notepad.exe"
         $pe.Is64 | Should -BeTrue
         $pe.IsDotNet | Should -BeFalse
     }
-    It 'restituisce $null per un file che non e'' un eseguibile' {
-        $t = Join-Path $TestDrive 'testo.exe'
+    It 'returns $null for a file that is not an executable' {
+        $t = Join-Path $TestDrive 'text.exe'
         Set-Content -LiteralPath $t -Value ('a' * 2000)
         Get-PeInfo $t | Should -BeNullOrEmpty
     }
-    It 'misura i dati accodati dopo l''ultima sezione' {
+    It 'measures the data appended after the last section' {
         $p = New-Copy 'overlay.exe'
         $fs = [IO.File]::Open($p, 'Append'); $fs.Write((New-Object byte[] 4096), 0, 4096); $fs.Dispose()
         $pe = Get-PeInfo $p
@@ -61,93 +62,93 @@ Describe 'Get-PeInfo' {
 }
 
 Describe 'Test-SingleFile' {
-    It 'non segnala un programma Microsoft firmato' {
+    It 'does not flag a signed Microsoft program' {
         $r = Get-Result "$env:SystemRoot\System32\notepad.exe"
         $r.Severity | Should -Be 'Info'
-        $r.Reasons -join ' ' | Should -Match 'Firmato da Microsoft'
+        $r.Reasons -join ' ' | Should -Match 'Signed by Microsoft'
     }
-    It 'segnala un eseguibile non firmato' {
-        (Get-Result $script:App).Reasons -join ' ' | Should -Match 'Non firmato'
+    It 'flags an unsigned executable' {
+        (Get-Result $script:App).Reasons -join ' ' | Should -Match 'Not digitally signed'
     }
-    It 'riporta da dove e'' stato scaricato' {
-        $p = New-Copy 'scaricato.exe'
-        Set-Content -LiteralPath $p -Stream 'Zone.Identifier' -Value "[ZoneTransfer]`r`nZoneId=3`r`nHostUrl=https://download.example.invalid/scaricato.exe"
+    It 'reports where it was downloaded from' {
+        $p = New-Copy 'downloaded.exe'
+        Set-Content -LiteralPath $p -Stream 'Zone.Identifier' -Value "[ZoneTransfer]`r`nZoneId=3`r`nHostUrl=https://download.example.invalid/downloaded.exe"
         $r = Get-Result $p
-        $r.Reasons -join ' ' | Should -Match 'Scaricato da https://download\.example\.invalid'
-        $r.Reasons -join ' ' | Should -Match 'Scaricato da internet e senza firma'
+        $r.Reasons -join ' ' | Should -Match 'Downloaded from https://download\.example\.invalid'
+        $r.Reasons -join ' ' | Should -Match 'Downloaded from the internet and unsigned'
     }
-    It 'segna come Alto un programma con doppia estensione' {
-        (Get-Result (New-Copy 'foto vacanze.jpg.exe')).Severity | Should -Be 'Alto'
+    It 'rates a program with a double extension as High' {
+        (Get-Result (New-Copy 'holiday photo.jpg.exe')).Severity | Should -Be 'High'
     }
-    It 'segna come Alto un nome con il carattere che inverte il testo' {
-        $name = 'fattura' + [char]0x202E + 'fdp.exe'
-        (Get-Result (New-Copy $name)).Severity | Should -Be 'Alto'
+    It 'rates a name with the right-to-left override character as High' {
+        $name = 'invoice' + [char]0x202E + 'fdp.exe'
+        (Get-Result (New-Copy $name)).Severity | Should -Be 'High'
     }
-    It 'segna come Alto un eseguibile gonfiato di zeri per superare i limiti degli antivirus' {
-        $p = New-Copy 'gonfiato.exe'
+    It 'rates as High an executable inflated with zeros to exceed antivirus limits' {
+        $p = New-Copy 'inflated.exe'
         $fs = [IO.File]::Open($p, 'Append')
         $zeros = New-Object byte[] (1MB)
         for ($i = 0; $i -lt 52; $i++) { $fs.Write($zeros, 0, $zeros.Length) }
         $fs.Dispose()
         $r = Get-Result $p
-        $r.Severity | Should -Be 'Alto'
-        $r.Reasons -join ' ' | Should -Match 'Gonfiato'
+        $r.Severity | Should -Be 'High'
+        $r.Reasons -join ' ' | Should -Match 'Inflated'
     }
-    It 'riconosce un eseguibile compresso con UPX' {
-        $p = New-Copy 'compresso.exe'
+    It 'recognizes an executable packed with UPX' {
+        $p = New-Copy 'packed.exe'
         Set-FirstSectionName $p 'UPX0'
         (Get-Result $p).Reasons -join ' ' | Should -Match 'UPX'
     }
-    It 'segnala uno script offuscato' {
-        $p = Join-Path $fx 'avvio.vbs'
+    It 'flags an obfuscated script' {
+        $p = Join-Path $fx 'startup.vbs'
         Set-Content -LiteralPath $p -Value ('x = "' + ('QUJD' * 120) + '"')
         $r = Get-Result $p
-        $r.Severity | Should -BeIn 'Medio', 'Alto'
-        $r.Reasons -join ' ' | Should -Match 'offuscato'
+        $r.Severity | Should -BeIn 'Medium', 'High'
+        $r.Reasons -join ' ' | Should -Match 'Obfuscated'
     }
-    It 'segnala un collegamento che lancia PowerShell' {
-        $p = Join-Path $fx 'Documento.lnk'
+    It 'flags a shortcut that launches PowerShell' {
+        $p = Join-Path $fx 'Document.lnk'
         $sh = New-Object -ComObject WScript.Shell
         $lnk = $sh.CreateShortcut($p)
         $lnk.TargetPath = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
-        $lnk.Arguments = '-NoProfile -File avvio.ps1'
+        $lnk.Arguments = '-NoProfile -File startup.ps1'
         $lnk.Save()
-        (Get-Result $p).Reasons -join ' ' | Should -Match 'interprete di comandi'
+        (Get-Result $p).Reasons -join ' ' | Should -Match 'command interpreter'
     }
-    It 'segnala un archivio che contiene file ingannevoli' {
+    It 'flags an archive that contains misleading files' {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         $src = Join-Path $TestDrive 'zipsrc'
         New-Item -ItemType Directory -Path $src -Force | Out-Null
-        Copy-Item -LiteralPath $script:App -Destination (Join-Path $src 'documento.pdf.exe')
-        $zip = Join-Path $fx 'archivio.zip'
+        Copy-Item -LiteralPath $script:App -Destination (Join-Path $src 'document.pdf.exe')
+        $zip = Join-Path $fx 'archive.zip'
         [IO.Compression.ZipFile]::CreateFromDirectory($src, $zip)
         $r = Get-Result $zip
-        $r.Severity | Should -BeIn 'Medio', 'Alto'
-        $r.Reasons -join ' ' | Should -Match 'documento\.pdf\.exe'
+        $r.Severity | Should -BeIn 'Medium', 'High'
+        $r.Reasons -join ' ' | Should -Match 'document\.pdf\.exe'
     }
 }
 
-Describe 'Cartella di un gioco con DLL sostituite' {
+Describe 'Game folder with replaced DLLs' {
     BeforeAll {
-        $game = Join-Path $TestDrive 'Gioco'
+        $game = Join-Path $TestDrive 'Game'
         New-Item -ItemType Directory -Path $game -Force | Out-Null
-        Copy-Item -LiteralPath $script:App -Destination (Join-Path $game 'gioco.exe')
+        Copy-Item -LiteralPath $script:App -Destination (Join-Path $game 'game.exe')
         Copy-Item -LiteralPath $script:App -Destination (Join-Path $game 'version.dll')
         Copy-Item -LiteralPath $script:App -Destination (Join-Path $game 'steam_api64.dll')
-        Copy-Item -LiteralPath $script:App -Destination (Join-Path $game 'libreria-normale.dll')
+        Copy-Item -LiteralPath $script:App -Destination (Join-Path $game 'normal-library.dll')
         $script:Findings.Clear(); $script:Inventory.Clear()
         Invoke-CheckFile -Path $game
     }
-    It 'segna come Alto una DLL di sistema non firmata accanto al programma' {
-        ($script:Findings | Where-Object Title -like '*version.dll').Severity | Should -Be 'Alto'
+    It 'rates as High an unsigned system DLL next to the program' {
+        ($script:Findings | Where-Object Title -like '*version.dll').Severity | Should -Be 'High'
     }
-    It 'segnala la DLL del client di gioco sostituita da un crack' {
-        ($script:Findings | Where-Object Title -like '*steam_api64.dll').Severity | Should -Be 'Medio'
+    It 'flags the game client DLL replaced by a crack' {
+        ($script:Findings | Where-Object Title -like '*steam_api64.dll').Severity | Should -Be 'Medium'
     }
-    It 'non segnala le altre DLL' {
-        $script:Findings | Where-Object Title -like '*libreria-normale*' | Should -BeNullOrEmpty
+    It 'does not flag the other DLLs' {
+        $script:Findings | Where-Object Title -like '*normal-library*' | Should -BeNullOrEmpty
     }
-    It 'analizza l''eseguibile della cartella' {
-        $script:Findings | Where-Object Title -eq 'gioco.exe' | Should -Not -BeNullOrEmpty
+    It 'analyzes the executable of the folder' {
+        $script:Findings | Where-Object Title -eq 'game.exe' | Should -Not -BeNullOrEmpty
     }
 }

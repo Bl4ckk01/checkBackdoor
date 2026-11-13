@@ -1,5 +1,5 @@
 {
-    "_istruzioni": "Esempio condiviso. Le tue voci personali vanno in allowlist.local.json (stesso formato, esclusa da git). Sono ammessi i caratteri jolly * e ?. Un percorso nasconde qualunque file in quella posizione: per essere piu' rigoroso usa l'hash SHA-256 (cambia a ogni aggiornamento del programma).",
+    "_instructions": "Shared example. Your personal entries go in allowlist.local.json (same format, excluded from git). The * and ? wildcards are allowed. A path hides any file in that location: to be stricter use the SHA-256 hash (it changes at every program update).",
     "paths": [],
     "sha256": [],
     "titles": []

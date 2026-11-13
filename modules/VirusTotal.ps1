@@ -1,5 +1,5 @@
-# Verifica opzionale degli hash su VirusTotal. Viene inviato SOLO l'hash SHA-256
-# (un'impronta del file), mai il file stesso. Serve una chiave API gratuita.
+# Optional hash lookup on VirusTotal. ONLY the SHA-256 hash (a fingerprint of the file)
+# is sent, never the file itself. A free API key is needed.
 
 function Invoke-VirusTotalLookup {
     param([string]$ApiKey, [int]$Max = 20, [switch]$IncludeInfo)
@@ -13,7 +13,7 @@ function Invoke-VirusTotalLookup {
     $results = @{}
     for ($i = 0; $i -lt $hashes.Count; $i++) {
         $h = $hashes[$i]
-        Write-Progress -Activity 'VirusTotal' -Status "Hash $($i + 1) di $($hashes.Count) (limite API gratuita: 4 al minuto)" -PercentComplete (100 * $i / $hashes.Count)
+        Write-Progress -Activity 'VirusTotal' -Status "Hash $($i + 1) of $($hashes.Count) (free API limit: 4 per minute)" -PercentComplete (100 * $i / $hashes.Count)
         if ($i -gt 0) { Start-Sleep -Seconds 16 }
         try {
             $r = Invoke-RestMethod -Uri "https://www.virustotal.com/api/v3/files/$h" -Headers @{ 'x-apikey' = $ApiKey } -ErrorAction Stop
@@ -31,10 +31,10 @@ function Invoke-VirusTotalLookup {
             if ($code -eq 404) {
                 $results[$h] = [pscustomobject]@{ Known = $false; Malicious = 0; Suspicious = 0; Total = 0; Label = $null; Link = "https://www.virustotal.com/gui/file/$h" }
             } elseif ($code -in 401, 403) {
-                Write-ScanWarning 'Chiave API di VirusTotal non valida: verifica saltata.'
+                Write-ScanWarning 'Invalid VirusTotal API key: lookup skipped.'
                 break
             } elseif ($code -eq 429) {
-                Write-ScanWarning 'Limite di richieste VirusTotal raggiunto: verifica interrotta.'
+                Write-ScanWarning 'VirusTotal request limit reached: lookup stopped.'
                 break
             }
         }
@@ -46,17 +46,17 @@ function Invoke-VirusTotalLookup {
         $vt = $results[$f.Sha256]
         $f.VirusTotal = $vt
         if (-not $vt.Known) {
-            $f.Reasons = @($f.Reasons) + 'VirusTotal non ha mai visto questo file: e'' raro o creato apposta per te (da caricare manualmente per un''analisi)'
+            $f.Reasons = @($f.Reasons) + 'VirusTotal has never seen this file: it is rare or made specifically for you (upload it by hand for an analysis)'
         } elseif ($vt.Malicious -ge 5) {
-            $f.Severity = 'Alto'
-            $f.Reasons = @("VirusTotal: $($vt.Malicious)/$($vt.Total) antivirus lo considerano malevolo$(if ($vt.Label) { " ($($vt.Label))" })") + @($f.Reasons)
+            $f.Severity = 'High'
+            $f.Reasons = @("VirusTotal: $($vt.Malicious)/$($vt.Total) antivirus engines consider it malicious$(if ($vt.Label) { " ($($vt.Label))" })") + @($f.Reasons)
         } elseif ($vt.Malicious -ge 1 -or $vt.Suspicious -ge 2) {
-            if ($f.Severity -in 'Basso', 'Info') { $f.Severity = 'Medio' }
-            $f.Reasons = @("VirusTotal: $($vt.Malicious) rilevamenti malevoli e $($vt.Suspicious) sospetti su $($vt.Total) (pochi rilevamenti possono essere falsi positivi, specie per crack e tool)") + @($f.Reasons)
+            if ($f.Severity -in 'Low', 'Info') { $f.Severity = 'Medium' }
+            $f.Reasons = @("VirusTotal: $($vt.Malicious) malicious and $($vt.Suspicious) suspicious detections out of $($vt.Total) (a few detections can be false positives, especially for cracks and tools)") + @($f.Reasons)
         } else {
-            $f.Reasons = @("VirusTotal: 0/$($vt.Total) rilevamenti") + @($f.Reasons)
+            $f.Reasons = @("VirusTotal: 0/$($vt.Total) detections") + @($f.Reasons)
         }
-        # Stesso ID, gravita' e motivi aggiornati: l'app sostituisce la segnalazione
+        # Same ID, updated severity and reasons: the app replaces the finding
         Write-ScanEvent 'finding.updated' ([ordered]@{ check = 'VirusTotal'; finding = $f })
     }
 }

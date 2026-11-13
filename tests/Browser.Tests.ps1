@@ -1,13 +1,14 @@
-# Estensioni dei browser su un profilo Chromium finto, parametri dei collegamenti.
-# Non tocca i browser ne' il registro del PC: tutto avviene nella cartella TestDrive.
+# Browser extensions on a fake Chromium profile, shortcut parameters.
+# It touches neither the browsers nor the registry of the PC: everything happens in TestDrive.
 
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     . (Get-ModuleScript Common)
+    . (Get-ModuleScript CommandRisk)
     . (Get-ModuleScript Browser)
 
     $profileDir = Join-Path $TestDrive 'Chrome\Default'
-    $unpacked = Join-Path $TestDrive 'Desktop\estensione-locale'
+    $unpacked = Join-Path $TestDrive 'Desktop\local-extension'
     function New-Ext {
         param([string]$Id, [string]$Manifest)
         $dir = Join-Path $profileDir "Extensions\$Id\1.0_0"
@@ -15,14 +16,14 @@ BeforeAll {
         Set-Content -LiteralPath (Join-Path $dir 'manifest.json') -Value $Manifest
     }
     New-Item -ItemType Directory -Force -Path $unpacked | Out-Null
-    Set-Content -LiteralPath (Join-Path $unpacked 'manifest.json') -Value '{"name":"Estensione locale","version":"9.9"}'
+    Set-Content -LiteralPath (Join-Path $unpacked 'manifest.json') -Value '{"name":"Local extension","version":"9.9"}'
     New-Ext 'store' '{"name":"Dark Reader","version":"1.0","update_url":"https://clients2.google.com/service/update2/crx"}'
     New-Ext 'sideload' '{"name":"PDF Converter","version":"2.0","update_url":"https://updates.example.invalid/x.xml"}'
     New-Ext 'disabled' '{"name":"__MSG_appName__","default_locale":"en","version":"1.0","update_url":"https://clients2.google.com/service/update2/crx"}'
     New-Item -ItemType Directory -Force -Path (Join-Path $profileDir 'Extensions\disabled\1.0_0\_locales\en') | Out-Null
     Set-Content -LiteralPath (Join-Path $profileDir 'Extensions\disabled\1.0_0\_locales\en\messages.json') -Value '{"appName":{"message":"Coupon Finder"}}'
     New-Ext 'flagged' '{"name":"Netflix Plus","version":"1.2","update_url":"https://clients2.google.com/service/update2/crx"}'
-    New-Ext 'edgestore' '{"name":"Traduttore","version":"3.0","update_url":"https://edge.microsoft.com/extensionwebstorebase/v1/crx"}'
+    New-Ext 'edgestore' '{"name":"Translator","version":"3.0","update_url":"https://edge.microsoft.com/extensionwebstorebase/v1/crx"}'
 
     $allSites = '"explicit_host":["<all_urls>"]'
     $prefs = @"
@@ -33,8 +34,8 @@ BeforeAll {
  "disabled":{"location":1,"from_webstore":true,"path":"disabled\\1.0_0","state":0,"disable_reasons":[1]},
  "flagged":{"location":1,"from_webstore":true,"path":"flagged\\1.0_0","blacklist_state":1,"disable_reasons":[256]},
  "edgestore":{"location":1,"from_webstore":false,"path":"edgestore\\1.0_0","active_permissions":{"api":["cookies"],$allSites}},
- "residuo":{"active_bit":false},
- "componente":{"location":5,"path":"C:\\Program Files\\Browser\\component"}
+ "leftover":{"active_bit":false},
+ "component":{"location":5,"path":"C:\\Program Files\\Browser\\component"}
 }}}
 "@
     Set-Content -LiteralPath (Join-Path $profileDir 'Secure Preferences') -Value $prefs
@@ -45,52 +46,52 @@ BeforeAll {
 }
 
 Describe 'Test-ChromiumProfile' {
-    It 'mette in inventario le estensioni installate, non i residui ne'' i componenti' {
+    It 'inventories the installed extensions, not leftovers or components' {
         $script:Inventory | Should -HaveCount 6
-        $script:Inventory.Key -join ' ' | Should -Not -Match 'residuo|componente'
+        $script:Inventory.Key -join ' ' | Should -Not -Match 'leftover|component'
     }
-    It 'legge il nome tradotto dal manifest (__MSG_...__)' {
+    It 'reads the localized name from the manifest (__MSG_...__)' {
         ($script:Inventory | Where-Object Key -like '*| disabled').Value | Should -Match '^Coupon Finder'
     }
-    It 'segna come Alto un''estensione caricata da cartella con accesso ai cookie' {
-        (Get-ExtFinding 'Estensione locale').Severity | Should -Be 'Alto'
+    It 'rates as High an extension loaded from a folder with access to cookies' {
+        (Get-ExtFinding 'Local extension').Severity | Should -Be 'High'
     }
-    It 'segna come Alto un''estensione non da store con server di aggiornamento privato' {
+    It 'rates as High a non-store extension with a private update server' {
         $f = Get-ExtFinding 'PDF Converter'
-        $f.Severity | Should -Be 'Alto'
+        $f.Severity | Should -Be 'High'
         $f.Reasons -join ' ' | Should -Match 'updates\.example\.invalid'
     }
-    It 'segna come Alto un''estensione che il browser ha marcato come malware, anche se disattivata' {
+    It 'rates as High an extension the browser marked as malware, even if disabled' {
         $f = Get-ExtFinding 'Netflix Plus'
-        $f.Severity | Should -Be 'Alto'
+        $f.Severity | Should -Be 'High'
         $f.Reasons -join ' ' | Should -Match 'malware'
     }
-    It 'non segnala <Name>' -ForEach @(@{ Name = 'Dark Reader' }, @{ Name = 'Coupon Finder' }, @{ Name = 'Traduttore' }) {
+    It 'does not flag <Name>' -ForEach @(@{ Name = 'Dark Reader' }, @{ Name = 'Coupon Finder' }, @{ Name = 'Translator' }) {
         Get-ExtFinding $Name | Should -BeNullOrEmpty
     }
 }
 
 Describe 'Get-PermissionRisk' {
-    It 'non da'' punti a permessi ordinari' {
+    It 'gives no points to ordinary permissions' {
         (Get-PermissionRisk @('storage', 'tabs')).Score | Should -Be 0
     }
-    It 'pesa l''accesso a tutti i siti insieme ai cookie' {
+    It 'weighs access to all sites together with cookies' {
         (Get-PermissionRisk @('<all_urls>', 'cookies')).Score | Should -Be 20
     }
-    It 'pesa il permesso debugger' {
+    It 'weighs the debugger permission' {
         (Get-PermissionRisk @('debugger')).Score | Should -Be 20
     }
 }
 
-Describe 'Parametri del browser nei collegamenti' {
-    It 'segnala <Line>' -ForEach @(
+Describe 'Browser parameters in shortcuts' {
+    It 'flags <Line>' -ForEach @(
         @{ Line = '--load-extension="C:\Users\x\AppData\Local\ext"' }
         @{ Line = '--remote-debugging-port=9222' }
-        @{ Line = 'https://ricerca.example.invalid' }
+        @{ Line = 'https://search.example.invalid' }
     ) {
         @($script:BrowserArgs | Where-Object { $Line -match $_.Rx }) | Should -Not -BeNullOrEmpty
     }
-    It 'non segnala <Line>' -ForEach @(
+    It 'does not flag <Line>' -ForEach @(
         @{ Line = '--profile-directory=Default' }
         @{ Line = '--profile-directory=Default --app-id=abcdef' }
         @{ Line = '--app=https://music.youtube.com' }

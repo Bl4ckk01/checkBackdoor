@@ -1,8 +1,8 @@
-# Browser (T1176): estensioni installate, criteri che le forzano o dirottano la
-# ricerca, collegamenti e processi del browser avviati con parametri da malware.
-# Molti stealer e adware dei crack installano un'estensione e la "bloccano" con un
-# criterio di Windows, cosi' non si puo' rimuovere dal browser.
-# Si leggono solo i metadati delle estensioni: mai cronologia, cookie o password.
+# Browsers (T1176): installed extensions, policies that force them or hijack search,
+# browser shortcuts and processes started with malware-style parameters.
+# Many stealers and adware bundled with cracks install an extension and "lock" it with a
+# Windows policy, so it cannot be removed from the browser.
+# Only extension metadata is read: never history, cookies or passwords.
 
 $script:ChromiumBrowsers = @(
     @{ Name = 'Google Chrome'; Local = 'Google\Chrome\User Data'; Page = 'chrome://extensions' }
@@ -15,21 +15,21 @@ $script:ChromiumBrowsers = @(
     @{ Name = 'Opera GX'; Roaming = 'Opera Software\Opera GX Stable'; Page = 'opera://extensions' }
 )
 
-# Codici "location" di Chromium: come e' arrivata l'estensione
+# Chromium "location" codes: how the extension got there
 $script:ExtLocation = @{
-    1 = @{ T = 'installata da te'; S = 0 }
-    2 = @{ T = 'installata da un altro programma'; S = 20 }
-    3 = @{ T = 'installata da un altro programma (registro)'; S = 20 }
-    4 = @{ T = 'caricata da una cartella (modalita'' sviluppatore)'; S = 45 }
-    6 = @{ T = 'installata da un altro programma'; S = 20 }
-    7 = @{ T = 'imposta da un criterio di Windows'; S = 35 }
-    8 = @{ T = 'caricata dalla riga di comando'; S = 60 }
-    9 = @{ T = 'imposta da un criterio di Windows'; S = 35 }
+    1 = @{ T = 'installed by you'; S = 0 }
+    2 = @{ T = 'installed by another program'; S = 20 }
+    3 = @{ T = 'installed by another program (registry)'; S = 20 }
+    4 = @{ T = 'loaded from a folder (developer mode)'; S = 45 }
+    6 = @{ T = 'installed by another program'; S = 20 }
+    7 = @{ T = 'forced by a Windows policy'; S = 35 }
+    8 = @{ T = 'loaded from the command line'; S = 60 }
+    9 = @{ T = 'forced by a Windows policy'; S = 35 }
 }
 $script:OfficialUpdate = '(?i)^https://(clients2\.google\.com/service/update2/crx|edge\.microsoft\.com/extensionwebstorebase/v1/crx|extension-updates\.opera\.com/|chromewebstore\.googleapis\.com/)'
 
-# ConvertFrom-Json di PowerShell 5.1 non regge i file Preferences piu' grandi:
-# JavaScriptSerializer senza limite di dimensione restituisce dizionari.
+# PowerShell 5.1's ConvertFrom-Json cannot handle the larger Preferences files:
+# JavaScriptSerializer with no size limit returns dictionaries.
 function Get-JsonSerializer {
     if (-not $script:JsonSerializer) {
         Add-Type -AssemblyName System.Web.Extensions
@@ -42,7 +42,7 @@ function Get-JsonSerializer {
 function Read-JsonFile {
     param([string]$Path)
     try {
-        # FileShare.ReadWrite: il browser puo' tenere il file aperto
+        # FileShare.ReadWrite: the browser may keep the file open
         $fs = [IO.File]::Open($Path, 'Open', 'Read', 'ReadWrite')
         try { $text = (New-Object IO.StreamReader($fs)).ReadToEnd() } finally { $fs.Dispose() }
         return (Get-JsonSerializer).DeserializeObject($text)
@@ -58,14 +58,14 @@ function Get-JsonNode {
     return $Node
 }
 
-# Nome leggibile dal manifest, anche quando e' tradotto (__MSG_nome__)
+# Readable name from the manifest, even when it is localised (__MSG_name__)
 function Get-ExtensionName {
     param($Manifest, [string]$Dir, [string]$Fallback)
     $name = $null
     if ($Manifest) { $name = [string]$Manifest['name'] }
     if ($name -match '^__MSG_(.+)__$') {
         $key = $Matches[1]
-        $locales = @('it', [string]$Manifest['default_locale'], 'en', 'en_US') | Where-Object { $_ } | Select-Object -Unique
+        $locales = @('en', 'en_US', [string]$Manifest['default_locale']) | Where-Object { $_ } | Select-Object -Unique
         foreach ($loc in $locales) {
             $msgs = Read-JsonFile (Join-Path $Dir "_locales\$loc\messages.json")
             if ($msgs) {
@@ -84,18 +84,18 @@ function Get-PermissionRisk {
     $p = @($Permissions | Where-Object { $_ })
     $allSites = @($p | Where-Object { $_ -match '^(<all_urls>|\*://\*/\*?|https?://\*/\*?|\*://\*\.?[^/]*/\*)$' }).Count -gt 0
     if ($allSites) {
-        $score += 10; $why += 'Puo'' leggere e modificare tutte le pagine che visiti'
-        if ($p -match '^(cookies|webRequest|webRequestBlocking|scripting|debugger)$') { $score += 10; $why += 'Ha accesso ai cookie o al traffico delle pagine: i cookie di sessione permettono di entrare nei tuoi account senza password' }
+        $score += 10; $why += 'Can read and change every page you visit'
+        if ($p -match '^(cookies|webRequest|webRequestBlocking|scripting|debugger)$') { $score += 10; $why += 'Has access to cookies or page traffic: session cookies let someone into your accounts without a password' }
     }
-    if ($p -contains 'debugger') { $score += 20; $why += 'Usa il permesso "debugger": puo'' controllare completamente le schede' }
-    if ($p -contains 'nativeMessaging') { $score += 10; $why += 'Comunica con un programma installato sul PC' }
-    if ($p -contains 'proxy') { $score += 15; $why += 'Puo'' deviare il traffico verso un proxy' }
-    if ($p -contains 'management') { $score += 10; $why += 'Puo'' gestire e disattivare le altre estensioni (anche quelle di sicurezza)' }
+    if ($p -contains 'debugger') { $score += 20; $why += 'Uses the "debugger" permission: it can fully control your tabs' }
+    if ($p -contains 'nativeMessaging') { $score += 10; $why += 'Talks to a program installed on the PC' }
+    if ($p -contains 'proxy') { $score += 15; $why += 'Can route traffic through a proxy' }
+    if ($p -contains 'management') { $score += 10; $why += 'Can manage and turn off other extensions (security ones too)' }
     return @{ Score = $score; Reasons = $why }
 }
 
 function Get-ProfileRoots {
-    # Tutti i profili utente se siamo amministratori, altrimenti solo il proprio
+    # Every user profile when running as administrator, otherwise only your own
     $users = @()
     foreach ($prof in Get-ChildItem -LiteralPath "$env:SystemDrive\Users" -Directory -Force -ErrorAction SilentlyContinue) {
         if ($prof.Name -in 'Default', 'Default User', 'All Users', 'Public') { continue }
@@ -108,7 +108,7 @@ function Get-ProfileRoots {
 
 function Test-ChromiumProfile {
     param([string]$Browser, [string]$Page, [string]$ProfileDir, [string]$User)
-    $cat = 'Browser'
+    $cat = 'Browsers'
     $settings = @{}
     foreach ($file in 'Preferences', 'Secure Preferences') {
         $s = Get-JsonNode (Read-JsonFile (Join-Path $ProfileDir $file)) 'extensions', 'settings'
@@ -117,11 +117,11 @@ function Test-ChromiumProfile {
     $profileName = Split-Path $ProfileDir -Leaf
     foreach ($id in $settings.Keys) {
         $e = $settings[$id]
-        if ($e -isnot [System.Collections.IDictionary] -or -not $e.ContainsKey('location')) { continue }   # residui di estensioni rimosse
+        if ($e -isnot [System.Collections.IDictionary] -or -not $e.ContainsKey('location')) { continue }   # leftovers of removed extensions
         $loc = [int]$e['location']
-        if ($loc -in 5, 10) { continue }   # componenti interni del browser
+        if ($loc -in 5, 10) { continue }   # internal browser components
 
-        # Cartella e manifest dell'estensione
+        # Extension folder and manifest
         $rel = [string]$e['path']
         $dir = if ($rel -and [IO.Path]::IsPathRooted($rel)) { $rel } elseif ($rel) { Join-Path $ProfileDir "Extensions\$rel" } else { $null }
         $manifest = $null
@@ -131,27 +131,27 @@ function Test-ChromiumProfile {
         $version = if ($manifest) { [string]$manifest['version'] } else { '' }
 
         $locInfo = $script:ExtLocation[$loc]
-        $locText = if ($locInfo) { $locInfo.T } else { "origine $loc" }
+        $locText = if ($locInfo) { $locInfo.T } else { "origin $loc" }
         Add-InventoryItem $cat "$Browser | $User | $profileName | $id" "$name | $locText"
 
         $score = 0; $why = @()
-        if ($locInfo -and $locInfo.S) { $score += $locInfo.S; $why += "Origine: $locText" }
+        if ($locInfo -and $locInfo.S) { $score += $locInfo.S; $why += "Origin: $locText" }
         $update = if ($manifest) { [string]$manifest['update_url'] } else { '' }
-        # from_webstore vale solo per il Chrome Web Store: le estensioni dello store di
-        # Edge o Opera si riconoscono dal server di aggiornamento ufficiale.
+        # from_webstore only applies to the Chrome Web Store: extensions from the Edge or
+        # Opera stores are recognised by the official update server.
         $fromStore = $e['from_webstore'] -or ($update -match $script:OfficialUpdate)
         $flagged = $e['blacklist_state'] -ge 1 -or (Get-JsonNode $e 'omaha_attributes', '_malware')
         $oddOrigin = ($loc -in 4, 7, 8, 9) -or -not $fromStore -or ($update -and $update -notmatch $script:OfficialUpdate)
-        # Le estensioni da uno store ufficiale (anche se installate da un antivirus o una
-        # VPN) restano solo in inventario: chiedere accesso ai siti e' normale per loro.
+        # Extensions from an official store (even when installed by an antivirus or a VPN)
+        # stay in the inventory only: asking for access to websites is normal for them.
         if (-not $flagged -and -not $oddOrigin) { continue }
         if ($fromStore -and $loc -in 2, 3, 6) { $score -= 10 }
-        if ($loc -eq 1 -and -not $fromStore) { $score += 30; $why += 'Non proviene da uno store ufficiale delle estensioni' }
-        if ($loc -eq 4 -and $dir -and (Test-UserWritablePath "$dir\")) { $score += 10; $why += "Il codice sta in una cartella modificabile: $dir" }
-        if ($update -and $update -notmatch $script:OfficialUpdate) { $score += 25; $why += "Si aggiorna da un server che non e' lo store: $update" }
-        if ($flagged) { $score += 70; $why += 'Il browser l''ha segnalata come dannosa: e'' stata ritirata dallo store per malware' }
+        if ($loc -eq 1 -and -not $fromStore) { $score += 30; $why += 'Does not come from an official extension store' }
+        if ($loc -eq 4 -and $dir -and (Test-UserWritablePath "$dir\")) { $score += 10; $why += "The code is in a writable folder: $dir" }
+        if ($update -and $update -notmatch $script:OfficialUpdate) { $score += 25; $why += "Updates from a server that is not the store: $update" }
+        if ($flagged) { $score += 70; $why += 'The browser flagged it as harmful: it was pulled from the store for malware' }
 
-        # Permessi realmente concessi (active_permissions), o in mancanza quelli del manifest
+        # Permissions actually granted (active_permissions), or else those in the manifest
         $perms = @()
         $ap = $e['active_permissions']
         if ($ap -is [System.Collections.IDictionary]) {
@@ -163,32 +163,32 @@ function Test-ChromiumProfile {
         $pr = Get-PermissionRisk $perms
         $score += $pr.Score; $why += $pr.Reasons
 
-        # disable_reasons: 1 = disattivata da te; altri valori = disattivata dal browser
+        # disable_reasons: 1 = turned off by you; other values = turned off by the browser
         $reasons = @(@($e['disable_reasons']) | Where-Object { $_ -and [int]$_ -ne 0 } | ForEach-Object { [int]$_ })
         $disabled = ($e['state'] -eq 0) -or $reasons
         $byUser = $disabled -and (-not $reasons -or -not ($reasons | Where-Object { $_ -ne 1 }))
-        if ($byUser) { $score -= 20; $why += "L'hai disattivata tu: non e' in funzione, ma e' ancora installata" }
-        elseif ($disabled) { $score -= 10; $why += "Il browser l'ha disattivata: non e' in funzione, ma e' ancora installata. Se l'hai usata in passato, i dati a cui aveva accesso possono essere stati letti" }
+        if ($byUser) { $score -= 20; $why += 'You turned it off: it is not running, but it is still installed' }
+        elseif ($disabled) { $score -= 10; $why += 'The browser turned it off: it is not running, but it is still installed. If you used it in the past, the data it had access to may have been read' }
         $installed = $null
         foreach ($t in $e['first_install_time'], $e['install_time']) {
             if ($t) { try { $installed = [DateTime]::FromFileTimeUtc([long]$t * 10).ToLocalTime(); break } catch { } }
         }
-        if ($installed -and $installed -gt (Get-Date).AddDays(-30) -and $score -gt 0) { $score += 5; $why += "Installata il $($installed.ToString('dd/MM/yyyy'))" }
+        if ($installed -and $installed -gt (Get-Date).AddDays(-30) -and $score -gt 0) { $score += 5; $why += "Installed on $($installed.ToString('yyyy-MM-dd'))" }
 
-        # Un'estensione normale dallo store con accesso ai siti (AdBlock, password manager)
-        # resta solo in inventario: si segnala da "da verificare" in su.
+        # A normal store extension with access to websites (AdBlock, password managers)
+        # stays in the inventory only: it is reported from "to review" upwards.
         $sev = ConvertTo-Severity $score
-        if ($sev -in 'Info', 'Basso') { continue }
-        $evidence = "ID $id" + $(if ($version) { " · versione $version" }) + " · $locText" + $(if ($installed) { " · installata il $($installed.ToString('dd/MM/yyyy'))" })
-        Add-Finding -Category $cat -Severity $sev -Title "Estensione di $($Browser): $name" -Detail "Profilo $profileName di $User" `
+        if ($sev -in 'Info', 'Low') { continue }
+        $evidence = "ID $id" + $(if ($version) { " · version $version" }) + " · $locText" + $(if ($installed) { " · installed on $($installed.ToString('yyyy-MM-dd'))" })
+        Add-Finding -Category $cat -Severity $sev -Title "$Browser extension: $name" -Detail "Profile $profileName of $User" `
             -Path $dir -Evidence $evidence -Mitre 'T1176' -Reasons $why `
-            -Recommendation "Apri $Page nel browser e controlla l'estensione (l'ID si vede attivando la modalita' sviluppatore). Se non l'hai installata tu, rimuovila; se il pulsante Rimuovi e' bloccato, prima elimina il criterio che la impone (vedi le altre segnalazioni del browser). Poi cambia le password dei siti in cui eri connesso."
+            -Recommendation "Open $Page in the browser and check the extension (the ID shows up once you turn on developer mode). If you did not install it, remove it; if the Remove button is locked, first delete the policy that forces it (see the other browser findings). Then change the passwords of the sites you were signed in to."
     }
 }
 
 function Test-FirefoxProfiles {
     param($Users)
-    $cat = 'Browser'
+    $cat = 'Browsers'
     foreach ($u in $Users) {
         foreach ($prof in Get-ChildItem -LiteralPath (Join-Path $u.Roaming 'Mozilla\Firefox\Profiles') -Directory -ErrorAction SilentlyContinue) {
             $data = Read-JsonFile (Join-Path $prof.FullName 'extensions.json')
@@ -200,29 +200,29 @@ function Test-FirefoxProfiles {
                 $name = [string](Get-JsonNode $a 'defaultLocale', 'name'); if (-not $name) { $name = [string]$a['id'] }
                 Add-InventoryItem $cat "Firefox | $($u.User) | $($prof.Name) | $($a['id'])" "$name | $loc"
                 $score = 0; $why = @()
-                if ([int]$a['signedState'] -le 0) { $score += 45; $why += 'Non firmata da Mozilla: Firefox normalmente le rifiuta' }
-                if ($loc -in 'app-system-share', 'app-system-local', 'app-global') { $score += 30; $why += "Installata fuori dal profilo da un altro programma ($loc)" }
+                if ([int]$a['signedState'] -le 0) { $score += 45; $why += 'Not signed by Mozilla: Firefox normally refuses these' }
+                if ($loc -in 'app-system-share', 'app-system-local', 'app-global') { $score += 30; $why += "Installed outside the profile by another program ($loc)" }
                 $src = [string]$a['sourceURI']
-                if ($src -and $src -notmatch '(?i)^https://addons\.(mozilla\.org|cdn\.mozilla\.net)/') { $score += 20; $why += "Scaricata da $src invece che da addons.mozilla.org" }
+                if ($src -and $src -notmatch '(?i)^https://addons\.(mozilla\.org|cdn\.mozilla\.net)/') { $score += 20; $why += "Downloaded from $src instead of addons.mozilla.org" }
                 $perms = @(Get-JsonNode $a 'userPermissions', 'permissions') + @(Get-JsonNode $a 'userPermissions', 'origins')
                 $pr = Get-PermissionRisk $perms
                 $score += $pr.Score; $why += $pr.Reasons
-                if ($a['userDisabled'] -or -not $a['active']) { $score -= 20; $why += "E' disattivata" }
+                if ($a['userDisabled'] -or -not $a['active']) { $score -= 20; $why += 'It is turned off' }
                 $sev = ConvertTo-Severity $score
-                if ($sev -in 'Info', 'Basso') { continue }
-                Add-Finding -Category $cat -Severity $sev -Title "Estensione di Firefox: $name" -Detail "Profilo $($prof.Name) di $($u.User)" `
-                    -Path $a['path'] -Evidence "ID $($a['id']) · versione $($a['version'])" -Mitre 'T1176' -Reasons $why `
-                    -Recommendation 'Apri about:addons in Firefox e rimuovi l''estensione se non l''hai installata tu, poi cambia le password dei siti in cui eri connesso.'
+                if ($sev -in 'Info', 'Low') { continue }
+                Add-Finding -Category $cat -Severity $sev -Title "Firefox extension: $name" -Detail "Profile $($prof.Name) of $($u.User)" `
+                    -Path $a['path'] -Evidence "ID $($a['id']) · version $($a['version'])" -Mitre 'T1176' -Reasons $why `
+                    -Recommendation 'Open about:addons in Firefox and remove the extension if you did not install it, then change the passwords of the sites you were signed in to.'
             }
         }
     }
 }
 
-# Criteri di gruppo dei browser: estensioni forzate, ricerca e pagina iniziale
-# imposte, proxy, strumenti per sviluppatori bloccati.
+# Browser group policies: forced extensions, imposed search and home page, proxy,
+# blocked developer tools.
 function Test-BrowserPolicies {
-    $cat = 'Browser'
-    $roots = @([pscustomobject]@{ Root = 'HKLM:'; User = 'Tutti gli utenti' }) + @(Get-UserHives)
+    $cat = 'Browsers'
+    $roots = @([pscustomobject]@{ Root = 'HKLM:'; User = 'All users' }) + @(Get-UserHives)
     $products = @(
         @{ Browser = 'Google Chrome'; Key = 'SOFTWARE\Policies\Google\Chrome' }
         @{ Browser = 'Microsoft Edge'; Key = 'SOFTWARE\Policies\Microsoft\Edge' }
@@ -235,7 +235,7 @@ function Test-BrowserPolicies {
             if (-not (Test-Path -LiteralPath $base)) { continue }
             $where = "$base ($($r.User))"
 
-            # Estensioni imposte: ExtensionInstallForcelist ("id;url") ed ExtensionSettings (JSON)
+            # Forced extensions: ExtensionInstallForcelist ("id;url") and ExtensionSettings (JSON)
             $forced = @()
             foreach ($v in Get-RegValues "$base\ExtensionInstallForcelist") {
                 $parts = "$($v.Value)" -split ';', 2
@@ -254,17 +254,17 @@ function Test-BrowserPolicies {
                 } catch { }
             }
             foreach ($f in $forced) {
-                Add-InventoryItem $cat "Criterio | $($p.Browser) | estensione $($f.Id)" "$($f.Url)"
+                Add-InventoryItem $cat "Policy | $($p.Browser) | extension $($f.Id)" "$($f.Url)"
                 $official = (-not $f.Url) -or ($f.Url -match $script:OfficialUpdate)
-                $sev = 'Medio'
-                $why = @("L'estensione $($f.Id) e' installata d'obbligo da un criterio ($($f.Source)) e non si puo' rimuovere dal browser. Su un PC di casa non dovrebbe esserci nessun criterio del genere.")
-                if (-not $official) { $sev = 'Alto'; $why += "Viene scaricata da un server che non e' lo store ufficiale: $($f.Url)" }
-                Add-Finding -Category $cat -Severity $sev -Title "$($p.Browser): estensione imposta da un criterio" -Detail $where `
+                $sev = 'Medium'
+                $why = @("The extension $($f.Id) is force-installed by a policy ($($f.Source)) and cannot be removed from the browser. A home PC should have no such policy.")
+                if (-not $official) { $sev = 'High'; $why += "It is downloaded from a server that is not the official store: $($f.Url)" }
+                Add-Finding -Category $cat -Severity $sev -Title "$($p.Browser): extension forced by a policy" -Detail $where `
                     -Evidence "$($f.Id)$(if ($f.Url) { ';' + $f.Url })" -Mitre 'T1176' -Reasons $why `
-                    -Recommendation "Cerca l'ID sullo store per capire cos'e'. Se non la riconosci, elimina il valore dalla chiave $base\ExtensionInstallForcelist (o da ExtensionSettings) con l'Editor del Registro, riavvia il browser e rimuovi l'estensione."
+                    -Recommendation "Search the ID on the store to see what it is. If you do not recognise it, delete the value from $base\ExtensionInstallForcelist (or from ExtensionSettings) with Registry Editor, restart the browser and remove the extension."
             }
 
-            # Ricerca, pagina iniziale e nuova scheda imposte: dirottamento del browser
+            # Imposed search, home page and new tab: browser hijacking
             $hijack = @()
             foreach ($n in 'DefaultSearchProviderSearchURL', 'DefaultSearchProviderNewTabURL', 'HomepageLocation', 'NewTabPageLocation') {
                 $val = Get-RegValue $base $n
@@ -272,28 +272,28 @@ function Test-BrowserPolicies {
             }
             foreach ($v in Get-RegValues "$base\RestoreOnStartupURLs") { $hijack += "RestoreOnStartupURLs = $($v.Value)" }
             if ($hijack) {
-                Add-InventoryItem $cat "Criterio | $($p.Browser) | ricerca e pagina iniziale" ($hijack -join ' ; ')
-                Add-Finding -Category $cat -Severity 'Medio' -Title "$($p.Browser): ricerca o pagina iniziale imposte da un criterio" -Detail $where `
+                Add-InventoryItem $cat "Policy | $($p.Browser) | search and home page" ($hijack -join ' ; ')
+                Add-Finding -Category $cat -Severity 'Medium' -Title "$($p.Browser): search or home page forced by a policy" -Detail $where `
                     -Evidence ($hijack -join ' ; ') -Mitre 'T1176' `
-                    -Reasons 'Un criterio impone motore di ricerca o pagine di avvio: e'' il modo con cui gli adware dirottano il browser e impediscono di cambiare le impostazioni.' `
-                    -Recommendation "Se non l'hai impostato tu, elimina questi valori da $base e riavvia il browser."
+                    -Reasons 'A policy imposes the search engine or start pages: this is how adware hijacks the browser and stops you from changing the settings.' `
+                    -Recommendation "If you did not set it, delete these values from $base and restart the browser."
             }
 
-            # Proxy imposto e strumenti per sviluppatori bloccati
+            # Imposed proxy and blocked developer tools
             $proxy = @('ProxyMode', 'ProxyServer', 'ProxyPacUrl', 'ProxySettings') | ForEach-Object { $v = Get-RegValue $base $_; if ($v) { "$_ = $v" } }
             if ($proxy -and ($proxy -notmatch 'ProxyMode = (direct|system)$' -or $proxy.Count -gt 1)) {
-                Add-Finding -Category $cat -Severity 'Medio' -Title "$($p.Browser): proxy imposto da un criterio" -Detail $where -Evidence ($proxy -join ' ; ') -Mitre 'T1090' `
-                    -Reasons 'Tutto il traffico del browser passa da un server deciso dal criterio: permette di spiarlo o modificarlo.'
+                Add-Finding -Category $cat -Severity 'Medium' -Title "$($p.Browser): proxy forced by a policy" -Detail $where -Evidence ($proxy -join ' ; ') -Mitre 'T1090' `
+                    -Reasons 'All browser traffic goes through a server chosen by the policy: it can be spied on or changed.'
             }
             $dev = Get-RegValue $base 'DeveloperToolsAvailability'
             if ($dev -eq 2) {
-                Add-Finding -Category $cat -Severity 'Medio' -Title "$($p.Browser): strumenti per sviluppatori bloccati" -Detail $where -Evidence 'DeveloperToolsAvailability = 2' -Mitre 'T1562' `
-                    -Reasons 'Alcuni malware bloccano gli strumenti per sviluppatori per impedire di vedere cosa fa la loro estensione.'
+                Add-Finding -Category $cat -Severity 'Medium' -Title "$($p.Browser): developer tools blocked" -Detail $where -Evidence 'DeveloperToolsAvailability = 2' -Mitre 'T1562' `
+                    -Reasons 'Some malware blocks the developer tools so nobody can see what its extension does.'
             }
         }
     }
 
-    # Firefox: criteri nel registro o in distribution\policies.json
+    # Firefox: policies in the registry or in distribution\policies.json
     $ffPolicy = @()
     foreach ($r in $roots) {
         foreach ($k in 'Extensions\Install', 'Extensions\Locked') {
@@ -310,25 +310,25 @@ function Test-BrowserPolicies {
         }
     }
     if ($ffPolicy) {
-        Add-InventoryItem $cat 'Criterio | Firefox | estensioni' ($ffPolicy -join ' ; ')
-        Add-Finding -Category $cat -Severity 'Medio' -Title 'Firefox: estensioni imposte da un criterio' -Evidence ($ffPolicy -join ' ; ') -Mitre 'T1176' `
-            -Reasons 'Un criterio installa o blocca estensioni in Firefox: su un PC di casa non dovrebbe esserci.' `
-            -Recommendation 'Controlla about:policies in Firefox per vedere cosa impone il criterio.'
+        Add-InventoryItem $cat 'Policy | Firefox | extensions' ($ffPolicy -join ' ; ')
+        Add-Finding -Category $cat -Severity 'Medium' -Title 'Firefox: extensions forced by a policy' -Evidence ($ffPolicy -join ' ; ') -Mitre 'T1176' `
+            -Reasons 'A policy installs or locks extensions in Firefox: a home PC should not have one.' `
+            -Recommendation 'Check about:policies in Firefox to see what the policy imposes.'
     }
 }
 
-# Collegamenti e processi del browser con parametri usati dal malware
+# Browser shortcuts and processes with parameters used by malware
 $script:BrowserExe = '(?i)\\(chrome|msedge|brave|opera|launcher|vivaldi|firefox|browser)\.exe$'
 $script:BrowserArgs = @(
-    @{ Rx = '(?i)--load-extension'; S = 60; R = 'Carica un''estensione da una cartella a ogni avvio (--load-extension): tecnica tipica degli stealer' }
-    @{ Rx = '(?i)--remote-debugging-(port|pipe)'; S = 50; R = 'Apre il controllo remoto del browser (--remote-debugging): permette a un altro programma di leggere cookie e pagine' }
-    @{ Rx = '(?i)--headless'; S = 30; R = 'Browser senza finestra (--headless): lavora di nascosto' }
-    @{ Rx = '(?i)--disable-extensions-except'; S = 30; R = 'Disattiva tutte le estensioni tranne una' }
-    @{ Rx = '(?i)(?<!--app=)(?<!--app-url=)\bhttps?://'; S = 35; R = 'Apre un sito a ogni avvio: tecnica usata per dirottare la pagina iniziale' }
+    @{ Rx = '(?i)--load-extension'; S = 60; R = 'Loads an extension from a folder at every start (--load-extension): a typical stealer technique' }
+    @{ Rx = '(?i)--remote-debugging-(port|pipe)'; S = 50; R = 'Opens remote control of the browser (--remote-debugging): another program can read cookies and pages' }
+    @{ Rx = '(?i)--headless'; S = 30; R = 'Browser without a window (--headless): it works hidden' }
+    @{ Rx = '(?i)--disable-extensions-except'; S = 30; R = 'Turns off every extension except one' }
+    @{ Rx = '(?i)(?<!--app=)(?<!--app-url=)\bhttps?://'; S = 35; R = 'Opens a website at every start: a technique used to hijack the home page' }
 )
 
 function Test-BrowserShortcutsAndProcesses {
-    $cat = 'Browser'
+    $cat = 'Browsers'
     $dirs = @("$env:PUBLIC\Desktop", "$env:ProgramData\Microsoft\Windows\Start Menu\Programs")
     foreach ($u in Get-ProfileRoots) {
         $userHome = Split-Path $u.Local -Parent | Split-Path -Parent
@@ -345,10 +345,10 @@ function Test-BrowserShortcutsAndProcesses {
             $score = 0; $why = @()
             foreach ($a in $script:BrowserArgs) { if ($lnk.Arguments -match $a.Rx) { $score += $a.S; $why += $a.R } }
             if ($score -eq 0) { continue }
-            Add-InventoryItem $cat "Collegamento | $($f.FullName)" "$($lnk.Target) $($lnk.Arguments)"
-            Add-Finding -Category $cat -Severity (ConvertTo-Severity $score) -Title "Collegamento del browser modificato: $($f.Name)" -Path $f.FullName `
+            Add-InventoryItem $cat "Shortcut | $($f.FullName)" "$($lnk.Target) $($lnk.Arguments)"
+            Add-Finding -Category $cat -Severity (ConvertTo-Severity $score) -Title "Browser shortcut modified: $($f.Name)" -Path $f.FullName `
                 -Evidence "$($lnk.Target) $($lnk.Arguments)" -Mitre 'T1176' -Reasons $why `
-                -Recommendation 'Elimina il collegamento e ricrealo dal menu Start: i parametri aggiunti vengono applicati a ogni apertura del browser.'
+                -Recommendation 'Delete the shortcut and create it again from the Start menu: the added parameters apply every time the browser opens.'
         }
     }
 
@@ -362,11 +362,11 @@ function Test-BrowserShortcutsAndProcesses {
         $key = "$($p.ExecutablePath)|$($why -join '|')"
         if ($seen.ContainsKey($key)) { continue }; $seen[$key] = 1
         $parent = $procs[[int]$p.ParentProcessId]
-        $why += "Avviato da: $(if ($parent) { $parent.ExecutablePath } else { 'processo non piu'' attivo' })"
-        $why += 'E'' normale solo se stai usando strumenti di automazione o sviluppo (Playwright, Selenium, Puppeteer)'
-        Add-Finding -Category $cat -Severity (ConvertTo-Severity $score) -Title "Browser in esecuzione con parametri sospetti: $($p.Name) (PID $($p.ProcessId))" `
+        $why += "Started by: $(if ($parent) { $parent.ExecutablePath } else { 'a process that is no longer running' })"
+        $why += 'Normal only if you are using automation or development tools (Playwright, Selenium, Puppeteer)'
+        Add-Finding -Category $cat -Severity (ConvertTo-Severity $score) -Title "Browser running with suspicious parameters: $($p.Name) (PID $($p.ProcessId))" `
             -Path $p.ExecutablePath -Evidence $p.CommandLine -Mitre 'T1185' -Reasons $why `
-            -Recommendation 'Se non stai usando strumenti di sviluppo, chiudi il browser, controlla quale programma l''ha avviato (riga "Avviato da") e cambia le password da un altro dispositivo.'
+            -Recommendation 'If you are not using development tools, close the browser, check which program started it (the "Started by" line) and change your passwords from another device.'
     }
 }
 
@@ -376,7 +376,7 @@ function Invoke-CheckBrowser {
         foreach ($b in $script:ChromiumBrowsers) {
             $root = if ($b.Local) { Join-Path $u.Local $b.Local } else { Join-Path $u.Roaming $b.Roaming }
             if (-not (Test-Path -LiteralPath $root)) { continue }
-            # Opera tiene il profilo nella cartella principale; gli altri in Default, Profile 1...
+            # Opera keeps the profile in the main folder; the others in Default, Profile 1...
             $profiles = @()
             if (Test-Path -LiteralPath (Join-Path $root 'Preferences')) { $profiles += $root }
             foreach ($d in Get-ChildItem -LiteralPath $root -Directory -ErrorAction SilentlyContinue) {

@@ -1,57 +1,57 @@
-# Misurare i rilevamenti in una macchina virtuale
+# Measuring detections in a virtual machine
 
-`tools\Prova-Rilevamenti.ps1` risponde alla domanda "CheckBackdoor trova davvero queste
-tecniche?" su un Windows vero, senza usare malware.
+`tools\Test-Detections.ps1` answers the question "does CheckBackdoor really find these
+techniques?" on a real Windows, without using malware.
 
-## Cosa fa
+## What it does
 
-1. Controlla di girare in una macchina virtuale (altrimenti si ferma senza toccare nulla).
-2. Crea tecniche di persistenza **innocue**, tutte con il marcatore `CBProva`:
+1. Checks that it is running in a virtual machine (otherwise it stops without touching anything).
+2. Creates **harmless** persistence techniques, all with the `CBTest` marker:
 
-   | Tecnica | MITRE | Serve l'amministratore |
+   | Technique | MITRE | Needs administrator |
    |---|---|---|
-   | Voce Run (HKCU) con PowerShell nascosto e comando in Base64 | T1547.001 | no |
-   | Script nella cartella Esecuzione automatica | T1547.001 | no |
-   | Attività pianificata con PowerShell nascosto | T1053.005 | no |
-   | Profilo PowerShell che scarica ed esegue | T1546.013 | no |
-   | Processo BITS con comando di notifica | T1197 | no |
-   | Debugger IFEO su un programma | T1546.012 | sì |
-   | Servizio che lancia PowerShell nascosto | T1543.003 | sì |
-   | Sottoscrizione WMI permanente | T1546.003 | sì |
-   | Esclusione di Microsoft Defender | T1562.001 | sì |
+   | Run entry (HKCU) with hidden PowerShell and a Base64 command | T1547.001 | no |
+   | Script in the Startup folder | T1547.001 | no |
+   | Scheduled task with hidden PowerShell | T1053.005 | no |
+   | PowerShell profile that downloads and runs | T1546.013 | no |
+   | BITS job with a notify command | T1197 | no |
+   | IFEO debugger on a program | T1546.012 | yes |
+   | Service that starts hidden PowerShell | T1543.003 | yes |
+   | Permanent WMI subscription | T1546.003 | yes |
+   | Microsoft Defender exclusion | T1562.001 | yes |
 
-   Il "carico" è un `Write-Output`. Nessuna voce viene eseguita: l'attività parte nel 2099,
-   il servizio è manuale, il filtro WMI scatta solo nel 2099, il processo BITS punta a un
-   indirizzo `.invalid`.
-3. Esegue CheckBackdoor e cerca ogni tecnica tra le segnalazioni.
-4. **Rimuove sempre tutto**, anche se la verifica fallisce (il profilo PowerShell torna
-   identico a prima).
-5. Scrive una tabella in `report\validazione\validazione_<data>.md`.
+   The "payload" is a `Write-Output`. No entry is ever run: the task starts in 2099, the
+   service is manual, the WMI filter fires only in 2099, the BITS job points to an `.invalid`
+   address.
+3. Runs CheckBackdoor and looks for each technique among the findings.
+4. **Always removes everything**, even if the scan fails (the PowerShell profile goes back
+   to exactly what it was).
+5. Writes a table to `report\validation\validation_<date>.md`.
 
-## Come usarlo
+## How to use it
 
-1. Crea una macchina virtuale con Windows 10 o 11 (Hyper-V, VirtualBox, VMware) e fai uno
+1. Create a virtual machine with Windows 10 or 11 (Hyper-V, VirtualBox, VMware) and take a
    snapshot.
-2. Copia la cartella di CheckBackdoor nella VM.
-3. Apri PowerShell **come amministratore** e lancia:
+2. Copy the CheckBackdoor folder into the VM.
+3. Open PowerShell **as administrator** and run:
 
    ```powershell
-   powershell -ExecutionPolicy Bypass -File .\tools\Prova-Rilevamenti.ps1
+   powershell -ExecutionPolicy Bypass -File .\tools\Test-Detections.ps1
    ```
 
-4. Ripeti in una VM con Windows in inglese: alcune parti leggono testi di Windows.
-5. Torna allo snapshot.
+4. Repeat in a VM with Windows in another language: some parts read Windows texts.
+5. Go back to the snapshot.
 
-Il codice di uscita è `0` se tutte le tecniche provate sono state rilevate, `1` se qualcuna
-no, `2` se il PC non sembra una macchina virtuale.
+The exit code is `0` if all the tested techniques were detected, `1` if some were not, `2` if
+the PC does not look like a virtual machine. If your VM is not recognized, add `-SkipVmCheck`.
 
-## Risultati
+## Results
 
-Da compilare con le tabelle delle prove. Per ogni sistema: versione di Windows, lingua,
-amministratore sì/no, e la tabella prodotta dallo script.
+To be filled in with the test tables. For each system: Windows version, language,
+administrator yes/no, and the table produced by the script.
 
-| Sistema | Lingua | Tecniche rilevate | Note |
+| System | Language | Techniques detected | Notes |
 |---|---|---|---|
-| Windows 11 | italiano | da provare | |
-| Windows 11 | inglese | da provare | |
-| Windows 10 | italiano | da provare | |
+| Windows 11 | English | to test | |
+| Windows 11 | another language | to test | |
+| Windows 10 | English | to test | |

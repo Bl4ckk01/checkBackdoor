@@ -1,75 +1,73 @@
 # Roadmap
 
-CheckBackdoor cresce in due direzioni: **controlli migliori** per le tracce che backdoor e
-stealer lasciano su Windows, e un **software con interfaccia** che sostituisca lo script da
-riga di comando senza perdere trasparenza né privacy (nessun dato esce dal PC).
+CheckBackdoor grows in two directions: **better checks** for the traces backdoors and stealers
+leave on Windows, and **software with an interface** that replaces the command-line script
+without losing transparency or privacy (no data leaves the PC).
 
-## Fasi
+## Phases
 
-| Fase | Contenuto | Stato |
+| Phase | Content | Status |
 |---|---|---|
-| 0 | Licenza e avviso, test automatici (Pester 5), controllo automatico su GitHub Actions | fatto (GitHub Actions da verificare al primo push) |
-| 1 | Il motore emette eventi strutturati (avanzamento e segnalazioni) con formato versionato ([docs/EVENTI.md](docs/EVENTI.md)) | fatto |
-| 2 | Controllo di un file prima di aprirlo; iniezioni nei client Discord e nei wallet | fatto |
-| 3 | App: Home, Verifica in corso, Risultati (sola lettura) | fatto (anteprima, senza installatore) |
-| 4 | Linea temporale dai registri eventi; punti di avvio ancora scoperti | fatto |
-| 5 | App: Confronto, Impostazioni, azioni con backup e Annulla, scansione programmata | fatto |
-| 6 | Validazione su macchine virtuali, installer firmato, README in inglese, prima release | pronta: mancano le prove nelle VM, il certificato di firma e la pubblicazione |
+| 0 | License and warning, automated tests (Pester 5), automated checks on GitHub Actions | done (GitHub Actions to verify at the first push) |
+| 1 | The engine emits structured events (progress and findings) with a versioned format ([docs/EVENTS.md](docs/EVENTS.md)) | done |
+| 2 | Checking a file before opening it; injections into Discord clients and wallets | done |
+| 3 | App: Home, Scan in progress, Results (read-only) | done |
+| 4 | Timeline from the event logs; startup locations not yet covered | done |
+| 5 | App: Comparison, Settings, actions with backup and Undo, scheduled scan | done |
+| 6 | Validation on virtual machines, signed installer, first release | ready: VM runs, signing certificate and publishing still to do |
 
-## Controlli da aggiungere
+## Checks to add
 
-In ordine di valore per chi scarica crack e giochi da fonti non ufficiali.
+In order of value for people who download cracks and games from unofficial sources.
 
-1. **Controllo di un file prima di aprirlo** (`-File`):
-   - firma digitale e hash su VirusTotal;
-   - sito di provenienza (Zone.Identifier);
-   - compressione o offuscamento (entropia, sezioni UPX);
-   - dati accodati all'eseguibile;
-   - DLL con nomi di sistema non firmate nella stessa cartella (caricamento di DLL laterale).
-2. **Iniezioni degli stealer:** `index.js` modificato di Discord, `app.asar` di Exodus e Atomic
-   Wallet.
-3. **Linea temporale:**
-   - eventi 7045 (nuovo servizio);
-   - 5001 e 5007 (Defender modificato);
-   - 1116 e 1117 (rilevamenti);
-   - 4720 e 4732 (account e amministratori);
+1. **Checking a file before opening it** (`-File`):
+   - digital signature and hash on VirusTotal;
+   - source site (Zone.Identifier);
+   - packing or obfuscation (entropy, UPX sections);
+   - data appended to the executable;
+   - unsigned DLLs with system names in the same folder (DLL side-loading).
+2. **Stealer injections:** changed Discord `index.js`, Exodus and Atomic Wallet `app.asar`.
+3. **Timeline:**
+   - events 7045 (new service);
+   - 5001 and 5007 (Defender changed);
+   - 1116 and 1117 (detections);
+   - 4720 and 4732 (accounts and administrators);
    - 4104 (PowerShell);
-   - chiave BAM (ultima esecuzione dei programmi).
-4. **Punti di avvio ancora scoperti:**
-   - profili PowerShell;
-   - cartella Esecuzione automatica spostata tramite `User Shell Folders`;
-   - processi BITS;
+   - BAM key (last run of programs).
+4. **Startup locations not yet covered:**
+   - PowerShell profiles;
+   - Startup folder moved through `User Shell Folders`;
+   - BITS jobs;
    - AppCertDlls;
-   - database di compatibilità (SDB);
-   - componenti aggiuntivi di Office;
-   - provider Winsock;
-   - attività pianificate presenti solo come XML.
-5. **Misura dell'efficacia:**
-   - persistenze simulate con Atomic Red Team in una macchina virtuale, con una tabella
-     delle tecniche rilevate;
-   - prova su Windows 10 e su Windows in inglese.
+   - compatibility databases (SDB);
+   - Office add-ins;
+   - Winsock providers;
+   - scheduled tasks present only as XML.
+5. **Measuring effectiveness:**
+   - persistence simulated with Atomic Red Team in a virtual machine, with a table of the
+     techniques detected;
+   - tests on Windows 10 and on Windows in other languages.
 
-## Software con interfaccia
+## Software with an interface
 
-- **Tecnologia:** .NET 10 (LTS) con WPF e WebView2. Riusa l'interfaccia del report
-  (direzione "Verifica integrità", vedi `DESIGN.md`), produce un solo eseguibile firmabile e
-  lascia il motore di scansione in PowerShell.
-- **Due processi:** l'interfaccia gira come utente normale. Solo la scansione chiede i
-  privilegi di amministratore e trasmette avanzamento e segnalazioni all'interfaccia.
-- **Schermate:**
-  - Home: ultimo verdetto, avvio della verifica, area per trascinare un file da controllare;
-  - Verifica in corso: le aree si spuntano dal vivo;
-  - Risultati;
-  - Confronto e storico;
-  - Impostazioni: chiave VirusTotal cifrata con DPAPI, lista bianca, scansione programmata.
-- **Azioni su ogni segnalazione:**
-  - apri il percorso;
-  - controlla su VirusTotal;
-  - ignora (lista bianca);
-  - in seguito, "Disattiva": sempre con backup e pulsante Annulla, mai cancellazioni.
+- **Technology:** .NET 10 (LTS) with WPF and WebView2. It reuses the report interface (see
+  `DESIGN.md`), produces a single signable executable and keeps the scan engine in PowerShell.
+- **Two processes:** the interface runs as a normal user. Only the scan asks for administrator
+  rights and sends progress and findings to the interface.
+- **Screens:**
+  - Home: latest verdict, start of the scan, area to drop a file to check;
+  - Scan in progress: the areas tick off live;
+  - Results;
+  - Comparison and history;
+  - Settings: VirusTotal key encrypted with DPAPI, allowlist, scheduled scan.
+- **Actions on each finding:**
+  - open the path;
+  - look it up on VirusTotal;
+  - ignore (allowlist);
+  - "Disable": always with a backup and an Undo button, never deletions.
 
-## Principi che non cambiano
+## Principles that do not change
 
-- Sola lettura per impostazione predefinita; ogni modifica al sistema si può annullare.
-- Nessun dato inviato, tranne gli hash a VirusTotal e solo se l'utente lo attiva.
-- Ogni segnalazione spiega perché è sospetta e cosa fare.
+- Read-only by default; every change to the system can be undone.
+- No data sent, except hashes to VirusTotal and only if the user turns it on.
+- Every finding explains why it is suspicious and what to do.

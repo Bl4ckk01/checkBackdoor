@@ -1,5 +1,5 @@
-# Funzioni condivise da tutti i moduli: raccolta dei risultati, analisi dei file,
-# analisi delle righe di comando e punteggio di rischio.
+# Shared by every module: collecting findings, file analysis, command-line analysis
+# and the risk score.
 
 $script:Findings  = New-Object System.Collections.Generic.List[object]
 $script:Inventory = New-Object System.Collections.Generic.List[object]
@@ -9,14 +9,14 @@ $script:IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.Wind
     [Security.Principal.WindowsBuiltInRole]::Administrator)
 
 # ---------------------------------------------------------------------------
-# Eventi per chi segue la scansione dal vivo (l'app con interfaccia).
-# Formato descritto in docs/EVENTI.md: una riga JSON per evento, in append.
+# Events for whoever follows the scan live (the desktop app).
+# Format described in docs/EVENTS.md: one JSON line per event, appended.
 # ---------------------------------------------------------------------------
 
 $script:EventSchema = 'checkbackdoor.events/1'
-$script:EventSink = $null      # percorso completo; $null = nessun evento
+$script:EventSink = $null      # full path; $null = no events
 $script:EventSeq = 0
-$script:CurrentCheck = $null    # controllo in corso, riportato in ogni segnalazione
+$script:CurrentCheck = $null    # check in progress, reported in every finding
 $script:QuietMode = $false
 
 function Write-ScanEvent {
@@ -25,7 +25,7 @@ function Write-ScanEvent {
     $script:EventSeq++
     $evt = [ordered]@{ schema = $script:EventSchema; seq = $script:EventSeq; time = (Get-Date).ToString('o'); pid = $PID; type = $Type; data = $Data }
     $bytes = (New-Object Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $evt -Depth 8 -Compress) + "`n")
-    # Append con FileShare.ReadWrite: l'app legge il file mentre la scansione scrive
+    # Append with FileShare.ReadWrite: the app reads the file while the scan writes it
     for ($try = 0; $try -lt 5; $try++) {
         try {
             $fs = [IO.File]::Open($script:EventSink, 'Append', 'Write', 'ReadWrite')
@@ -42,37 +42,36 @@ function Write-ScanWarning {
 }
 
 # ---------------------------------------------------------------------------
-# Lista bianca: allowlist.json (condivisa) e allowlist.local.json (personale).
-# Si applica mentre la scansione gira, cosi' chi segue gli eventi non vede mai
-# comparire elementi che poi spariscono dal report.
-# ---------------------------------------------------------------------------
-
+# Allowlist: allowlist.json (shared) and allowlist.local.json (personal).
+# Applied while the scan runs, so whoever follows the events never sees items
+# appear that later vanish from the report.
 #
-# La lista bianca e' anche il posto piu' comodo per nascondersi: sono file che qualsiasi
-# programma dell'utente puo' riscrivere. Per questo le regole troppo ampie non si
-# applicano e vengono segnalate, un elemento ignorato dall'app torna visibile se il file
-# cambia, e tutto cio' che viene nascosto resta elencato nel report.
+# The allowlist is also the easiest place to hide: these are files any program of the
+# user can rewrite. That is why overly broad rules are not applied and are reported, an
+# item ignored from the app shows up again if its file changes, and everything hidden
+# stays listed in the report.
+# ---------------------------------------------------------------------------
 
 $script:Allowlist = @{ Paths = @(); Hashes = @(); Titles = @(); Ids = @{} }
 $script:AllowlistRejected = New-Object System.Collections.Generic.List[object]
 $script:Ignored = New-Object System.Collections.Generic.List[object]
 $script:IgnoredCount = 0
-$script:AllowlistCategory = 'Lista bianca'
+$script:AllowlistCategory = 'Allowlist'
 
-# Vero se la regola nasconderebbe intere parti del PC invece di un programma preciso:
-# troppo poco testo fisso (es. "*", "*.exe", "C:\*") oppure, per i percorsi, una regola
-# che copre da sola una cartella dove i malware si installano.
+# True when the rule would hide whole parts of the PC instead of one specific program:
+# too little fixed text (e.g. "*", "*.exe", "C:\*") or, for paths, a rule that on its own
+# covers a folder where malware installs itself.
 function Test-BroadAllowlistRule {
     param([string]$Rule, [switch]$IsPath)
     $literal = ($Rule -replace '[\*\?\[\]]', '') -replace '^[A-Za-z]:', ''
     if ($literal.Trim('\ ').Length -lt 6) { return $true }
     if ($IsPath) {
-        $user = "$env:SystemDrive\Users\qualcuno"
+        $user = "$env:SystemDrive\Users\someone"
         $canaries = @(
-            "$user\AppData\Roaming\canarino.exe", "$user\AppData\Local\canarino.exe", "$user\AppData\Local\Temp\canarino.exe"
-            "$user\Downloads\canarino.exe", "$user\Desktop\canarino.exe", "$env:SystemDrive\Users\Public\canarino.exe"
-            "$env:ProgramData\canarino.exe", "$env:SystemRoot\canarino.exe", "$env:SystemRoot\System32\canarino.exe"
-            "$env:SystemRoot\Temp\canarino.exe", "$env:ProgramFiles\canarino.exe"
+            "$user\AppData\Roaming\canary.exe", "$user\AppData\Local\canary.exe", "$user\AppData\Local\Temp\canary.exe"
+            "$user\Downloads\canary.exe", "$user\Desktop\canary.exe", "$env:SystemDrive\Users\Public\canary.exe"
+            "$env:ProgramData\canary.exe", "$env:SystemRoot\canary.exe", "$env:SystemRoot\System32\canary.exe"
+            "$env:SystemRoot\Temp\canary.exe", "$env:ProgramFiles\canary.exe"
         )
         foreach ($c in $canaries) { if ($c -like $Rule) { return $true } }
     }
@@ -85,18 +84,18 @@ function Import-Allowlist {
     $script:AllowlistRejected = New-Object System.Collections.Generic.List[object]
     foreach ($p in $Path) {
         if (-not $p -or -not (Test-Path -LiteralPath $p)) { continue }
-        try { $al = [IO.File]::ReadAllText($p) | ConvertFrom-Json } catch { Write-ScanWarning "$([IO.Path]::GetFileName($p)) non valido: $($_.Exception.Message)"; continue }
+        try { $al = [IO.File]::ReadAllText($p) | ConvertFrom-Json } catch { Write-ScanWarning "$([IO.Path]::GetFileName($p)) is not valid: $($_.Exception.Message)"; continue }
         foreach ($rule in @($al.paths | Where-Object { $_ })) {
-            if (Test-BroadAllowlistRule "$rule" -IsPath) { $script:AllowlistRejected.Add([pscustomobject]@{ File = $p; Kind = 'percorso'; Rule = "$rule" }) }
+            if (Test-BroadAllowlistRule "$rule" -IsPath) { $script:AllowlistRejected.Add([pscustomobject]@{ File = $p; Kind = 'path'; Rule = "$rule" }) }
             else { $script:Allowlist.Paths += "$rule" }
         }
         foreach ($rule in @($al.titles | Where-Object { $_ })) {
-            if (Test-BroadAllowlistRule "$rule") { $script:AllowlistRejected.Add([pscustomobject]@{ File = $p; Kind = 'titolo'; Rule = "$rule" }) }
+            if (Test-BroadAllowlistRule "$rule") { $script:AllowlistRejected.Add([pscustomobject]@{ File = $p; Kind = 'title'; Rule = "$rule" }) }
             else { $script:Allowlist.Titles += "$rule" }
         }
         $script:Allowlist.Hashes += @($al.sha256 | Where-Object { $_ } | ForEach-Object { "$_".ToUpperInvariant() })
-        # "ids": elementi ignorati dall'app, uno per uno (l'ID di Get-FindingId). In "items"
-        # l'app annota anche l'impronta che il file aveva quando e' stato ignorato.
+        # "ids": items ignored one by one from the app (the ID from Get-FindingId). In
+        # "items" the app also records the hash the file had when it was ignored.
         foreach ($id in @($al.ids | Where-Object { $_ })) {
             $k = "$id".ToLowerInvariant()
             if (-not $script:Allowlist.Ids.ContainsKey($k)) { $script:Allowlist.Ids[$k] = $null }
@@ -107,7 +106,7 @@ function Import-Allowlist {
     }
 }
 
-# Vero se l'elemento era stato ignorato dall'app ma il suo file non e' piu' lo stesso
+# True when the item was ignored from the app but its file is no longer the same
 function Test-IgnoredFileChanged {
     param($Finding)
     if (-not $Finding.Id -or -not $Finding.Sha256) { return $false }
@@ -115,17 +114,17 @@ function Test-IgnoredFileChanged {
     return [bool]($pinned -and $pinned -ne "$($Finding.Sha256)".ToUpperInvariant())
 }
 
-# La regola della lista bianca che nasconde la segnalazione, o $null
+# The allowlist rule that hides the finding, or $null
 function Get-AllowlistMatch {
     param($Finding)
     if ($Finding.Category -eq $script:AllowlistCategory) { return $null }
     foreach ($p in $script:Allowlist.Paths) {
-        if (($Finding.Path -and $Finding.Path -like $p) -or ($Finding.Evidence -and $Finding.Evidence -like $p)) { return "percorso $p" }
+        if (($Finding.Path -and $Finding.Path -like $p) -or ($Finding.Evidence -and $Finding.Evidence -like $p)) { return "path $p" }
     }
-    if ($Finding.Sha256 -and $script:Allowlist.Hashes -contains "$($Finding.Sha256)".ToUpperInvariant()) { return 'impronta SHA-256' }
-    foreach ($t in $script:Allowlist.Titles) { if ($Finding.Title -like $t) { return "titolo $t" } }
+    if ($Finding.Sha256 -and $script:Allowlist.Hashes -contains "$($Finding.Sha256)".ToUpperInvariant()) { return 'SHA-256 hash' }
+    foreach ($t in $script:Allowlist.Titles) { if ($Finding.Title -like $t) { return "title $t" } }
     if ($Finding.Id -and $script:Allowlist.Ids.ContainsKey("$($Finding.Id)".ToLowerInvariant()) -and -not (Test-IgnoredFileChanged $Finding)) {
-        return "ignorato dall'app"
+        return 'ignored in the app'
     }
     return $null
 }
@@ -135,21 +134,20 @@ function Test-Allowlisted {
     return [bool](Get-AllowlistMatch $Finding)
 }
 
-# Le regole scartate diventano segnalazioni: se non le ha scritte l'utente, qualcuno ha
-# provato a far sparire dei risultati.
+# Rejected rules become findings: if the user did not write them, someone tried to make
+# results disappear.
 function Add-AllowlistFindings {
     foreach ($r in $script:AllowlistRejected) {
-        Add-Finding -Category $script:AllowlistCategory -Severity 'Medio' -Title "Regola della lista bianca troppo ampia, non applicata: $($r.Rule)" `
+        Add-Finding -Category $script:AllowlistCategory -Severity 'Medium' -Title "Allowlist rule too broad, not applied: $($r.Rule)" `
             -Detail $r.File -Evidence "$($r.Kind): $($r.Rule)" -Mitre 'T1562.001' `
-            -Reasons @("Questa regola nasconderebbe intere cartelle o quasi ogni segnalazione, non un programma preciso: non e' stata applicata.",
-                "Se non l'hai scritta tu, qualcuno ha modificato la lista bianca per far sparire dei risultati.") `
-            -Recommendation "Apri il file indicato e togli la regola, oppure sostituiscila con il percorso completo del programma o con la sua impronta SHA-256."
+            -Reasons @('This rule would hide whole folders or almost every finding, not one specific program: it was not applied.',
+                'If you did not write it, someone changed the allowlist to make results disappear.') `
+            -Recommendation 'Open the file and remove the rule, or replace it with the full path of the program or its SHA-256 hash.'
     }
 }
 
-# ID stabile di una segnalazione: lo stesso elemento ha lo stesso ID in ogni
-# scansione, anche se VirusTotal ne cambia la gravita'. Serve all'app per
-# "ignora" e per le azioni sul singolo elemento.
+# Stable ID of a finding: the same item gets the same ID in every scan, even when
+# VirusTotal changes its severity. The app uses it for "ignore" and for actions.
 function Get-FindingId {
     param([string]$Category, [string]$Title, [string]$Path, [string]$Evidence)
     $key = ("$Category|$Title|$Path|$Evidence").ToLowerInvariant()
@@ -159,21 +157,21 @@ function Get-FindingId {
 }
 
 # ---------------------------------------------------------------------------
-# Raccolta risultati
+# Collecting findings
 # ---------------------------------------------------------------------------
 
 function ConvertTo-Severity {
     param([int]$Score)
-    if ($Score -ge 60) { return 'Alto' }
-    if ($Score -ge 35) { return 'Medio' }
-    if ($Score -ge 15) { return 'Basso' }
+    if ($Score -ge 60) { return 'High' }
+    if ($Score -ge 35) { return 'Medium' }
+    if ($Score -ge 15) { return 'Low' }
     return 'Info'
 }
 
 function Add-Finding {
     param(
         [Parameter(Mandatory)][string]$Category,
-        [Parameter(Mandatory)][ValidateSet('Alto', 'Medio', 'Basso', 'Info')][string]$Severity,
+        [Parameter(Mandatory)][ValidateSet('High', 'Medium', 'Low', 'Info')][string]$Severity,
         [Parameter(Mandatory)][string]$Title,
         [string]$Detail,
         [string]$Path,
@@ -183,7 +181,7 @@ function Add-Finding {
         [string[]]$Reasons,
         [string]$Sha256,
         [string]$Signer,
-        # Come disattivare l'elemento (Azioni.ps1): solo per i tipi che si possono annullare
+        # How to disable the item (Actions.ps1): only for kinds that can be undone
         [hashtable]$Remedy
     )
     if ($Path -and [IO.Path]::IsPathRooted($Path)) {
@@ -209,27 +207,27 @@ function Add-Finding {
     }
     $rule = Get-AllowlistMatch $finding
     if ($rule) {
-        # Nascosto, ma non senza traccia: il report elenca cosa e' stato scartato e perche'
+        # Hidden, but not without a trace: the report lists what was hidden and why
         $script:IgnoredCount++
         $script:Ignored.Add([pscustomobject]@{ Id = $finding.Id; Category = $Category; Severity = $Severity; Title = $Title; Path = $Path; Sha256 = $finding.Sha256; Rule = $rule })
         return
     }
     if (Test-IgnoredFileChanged $finding) {
-        $finding.Reasons = @("Avevi scelto di ignorare questo elemento, ma il file non e' piu' lo stesso di allora: va ricontrollato.") + @($finding.Reasons)
+        $finding.Reasons = @('You chose to ignore this item, but the file is no longer the same as it was then: check it again.') + @($finding.Reasons)
     }
     $script:Findings.Add($finding)
     Write-ScanEvent 'finding' ([ordered]@{ check = $script:CurrentCheck; finding = $finding })
 }
 
-# Ogni voce di avvio automatico finisce nell'inventario, anche se pulita:
-# serve per confrontare due scansioni (-CompareTo) e vedere cosa e' cambiato.
+# Every autostart entry goes into the inventory, even a clean one: it is used to
+# compare two scans (-CompareTo) and see what changed.
 function Add-InventoryItem {
     param([string]$Category, [string]$Key, [string]$Value)
     $script:Inventory.Add([pscustomobject]@{ Category = $Category; Key = $Key; Value = $Value })
 }
 
-# Registra una voce di persistenza: la mette in inventario e, se il punteggio e'
-# abbastanza alto, la segnala come risultato.
+# Records a persistence entry: adds it to the inventory and, if the score is high
+# enough, reports it as a finding.
 function Register-AutorunEntry {
     param(
         [string]$Category,
@@ -240,7 +238,7 @@ function Register-AutorunEntry {
         [int]$ExtraScore = 0,
         [string[]]$ExtraReasons,
         [hashtable]$Remedy,
-        [string]$Recommendation = 'Se non riconosci questo programma, cerca il nome del file online, caricalo su virustotal.com e poi rimuovi la voce di avvio.'
+        [string]$Recommendation = 'If you do not recognise this program, search the file name online, upload it to virustotal.com and then remove the autostart entry.'
     )
     Add-InventoryItem -Category $Category -Key "$Location | $Name" -Value $Command
     $risk = Get-CommandRisk -CommandLine $Command
@@ -255,7 +253,7 @@ function Register-AutorunEntry {
 }
 
 # ---------------------------------------------------------------------------
-# Analisi dei file
+# File analysis
 # ---------------------------------------------------------------------------
 
 $script:UserWritablePattern = '(?i)(\\Users\\[^\\]+\\(AppData|Downloads|Desktop|Documents|Music|Videos|Pictures|Saved Games)\\|\\Users\\Public\\|^[A-Z]:\\ProgramData\\|\\Windows\\Temp\\|\\Temp\\|\\\$Recycle\.Bin\\|^[A-Z]:\\PerfLogs\\|\\Windows\\Tasks\\|\\Windows\\Debug\\|\\Windows\\Fonts\\|\\Windows\\Help\\|\\Windows\\addins\\|\\System32\\Tasks\\)'
@@ -263,7 +261,6 @@ $script:UserWritablePattern = '(?i)(\\Users\\[^\\]+\\(AppData|Downloads|Desktop|
 function Test-UserWritablePath {
     param([string]$Path)
     if (-not $Path) { return $false }
-    # ProgramData\Microsoft\Windows Defender ospita file legittimi firmati Microsoft
     return ($Path -match $script:UserWritablePattern)
 }
 
@@ -304,12 +301,12 @@ function Get-FileInfo {
             }
             $info.IsMicrosoft = ($info.SignatureStatus -eq 'Valid' -and (Test-MicrosoftSigner $info.Signer))
         } catch { }
-        # Le app del Microsoft Store non hanno una firma nel singolo file: e' firmato il
-        # pacchetto, verificato da Windows all'installazione. La cartella WindowsApps
-        # e' modificabile solo dal sistema. 8wekyb3d8bbwe e' l'ID editore di Microsoft.
+        # Microsoft Store apps have no signature on each file: the package is signed and
+        # Windows verifies it at install time. The WindowsApps folder is writable only by
+        # the system. 8wekyb3d8bbwe is Microsoft's publisher ID.
         if ($info.SignatureStatus -eq 'NotSigned' -and $Path -match '(?i)^[A-Z]:\\Program Files\\WindowsApps\\([^\\]+)\\') {
             $info.SignatureStatus = 'Valid'
-            $info.Signer = "Pacchetto Microsoft Store ($($Matches[1]))"
+            $info.Signer = "Microsoft Store package ($($Matches[1]))"
             $info.IsMicrosoft = $Matches[1] -match '_8wekyb3d8bbwe$'
         }
     }
@@ -317,8 +314,8 @@ function Get-FileInfo {
     return $info
 }
 
-# L'hash si calcola solo per i file che finiscono nel report (calcolarlo per ogni
-# eseguibile esaminato rallenterebbe molto la scansione).
+# The hash is computed only for files that end up in the report (hashing every
+# executable examined would slow the scan down a lot).
 function Get-FileSha256 {
     param([string]$Path)
     $info = Get-FileInfo $Path
@@ -329,13 +326,13 @@ function Get-FileSha256 {
     return $info.Sha256
 }
 
-# Nomi di file casuali (es. "xkqzvbte.exe", "a8f3c1d9e2.exe") sono tipici dei dropper.
+# Random file names (e.g. "xkqzvbte.exe", "a8f3c1d9e2.exe") are typical of droppers.
 function Test-RandomLookingName {
     param([string]$Path)
     $name = [IO.Path]::GetFileNameWithoutExtension($Path)
     if (-not $name -or $name.Length -lt 7) { return $false }
     if ($name -match '^[0-9a-f]{8,}$' -or $name -match '^\{?[0-9a-f\-]{32,}\}?$') { return $true }
-    # Nomi con separatori o numeri di versione (pngcrush_1_8_w64, setup-x64) sono "umani"
+    # Names with separators or version numbers (pngcrush_1_8_w64, setup-x64) look human
     if ($name -match '[\s_\-\.]') { return $false }
     $letters = ($name -replace '[^a-zA-Z]', '')
     if ($letters.Length -lt 7) { return $false }
@@ -344,150 +341,7 @@ function Test-RandomLookingName {
 }
 
 # ---------------------------------------------------------------------------
-# Analisi delle righe di comando
-# ---------------------------------------------------------------------------
-
-$script:ExecExtensions = 'exe|com|bat|cmd|vbs|vbe|js|jse|wsf|wsh|ps1|psm1|dll|scr|cpl|msc|hta|lnk|sys|jar|pif|ocx'
-
-function Resolve-CommandPath {
-    param([string]$CommandLine)
-    if ([string]::IsNullOrWhiteSpace($CommandLine)) { return $null }
-    $cmd = [Environment]::ExpandEnvironmentVariables($CommandLine.Trim())
-    $cmd = $cmd -replace '^\\\?\?\\', ''
-    $cmd = $cmd -replace '^(?i)\\SystemRoot\\', "$env:SystemRoot\"
-    if ($cmd -match '^(?i)system32\\') { $cmd = Join-Path $env:SystemRoot $cmd }
-
-    $candidate = $null
-    if ($cmd.StartsWith('"')) {
-        $end = $cmd.IndexOf('"', 1)
-        if ($end -gt 1) { $candidate = $cmd.Substring(1, $end - 1) } else { $candidate = $cmd.Trim('"') }
-    } else {
-        $m = [regex]::Match($cmd, "^(?i)(.+?\.($script:ExecExtensions))(?=\s|,|`"|$)")
-        if ($m.Success) { $candidate = $m.Groups[1].Value } else { $candidate = ($cmd -split '\s+')[0] }
-    }
-    if (-not $candidate) { return $null }
-
-    if (-not [IO.Path]::IsPathRooted($candidate)) {
-        foreach ($dir in @("$env:SystemRoot\System32", $env:SystemRoot, "$env:SystemRoot\System32\wbem", "$env:SystemRoot\System32\WindowsPowerShell\v1.0")) {
-            $p = Join-Path $dir $candidate
-            if (Test-Path -LiteralPath $p -PathType Leaf) { return $p }
-            if (-not [IO.Path]::HasExtension($candidate) -and (Test-Path -LiteralPath "$p.exe" -PathType Leaf)) { return "$p.exe" }
-        }
-        $c = Get-Command $candidate -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($c) { return $c.Source }
-    }
-    return $candidate
-}
-
-# Restituisce i file citati negli argomenti (es. la DLL passata a rundll32 o lo
-# script passato a wscript), che sono il vero "carico" da analizzare.
-function Get-EmbeddedPaths {
-    param([string]$CommandLine)
-    if (-not $CommandLine) { return @() }
-    $cmd = [Environment]::ExpandEnvironmentVariables($CommandLine)
-    $found = New-Object System.Collections.Generic.List[string]
-    $rx = "(?i)([A-Z]:\\[^`"*?<>|,]+?\.($script:ExecExtensions))(?=[\s,`"']|$)"
-    foreach ($m in [regex]::Matches($cmd, $rx)) { $found.Add($m.Groups[1].Value) }
-    return $found
-}
-
-$script:SuspiciousPatterns = @(
-    @{ Rx = '(?i)\s-e(nc|ncodedcommand|c)?\s+[A-Za-z0-9+/=]{20,}'; S = 45; R = 'PowerShell con comando nascosto in Base64 (-EncodedCommand)' }
-    @{ Rx = '(?i)-w(indowstyle)?\s+h(idden)?\b'; S = 20; R = 'Esegue in una finestra nascosta' }
-    @{ Rx = '(?i)\b(iex|invoke-expression)\b'; S = 30; R = 'Esegue codice generato al volo (Invoke-Expression)' }
-    @{ Rx = '(?i)(downloadstring|downloadfile|downloaddata|invoke-webrequest|\biwr\b|net\.webclient|start-bitstransfer|invoke-restmethod|\birm\b)'; S = 35; R = 'Scarica contenuti da internet' }
-    @{ Rx = '(?i)frombase64string'; S = 25; R = 'Decodifica dati in Base64' }
-    @{ Rx = '(?i)-(nop|noprofile)\b.*-(ep|executionpolicy)\s+bypass|-(ep|executionpolicy)\s+bypass'; S = 15; R = 'Aggira la policy di esecuzione di PowerShell' }
-    @{ Rx = '(?i)mshta(\.exe)?["'']?\s+["'']?(https?|javascript|vbscript|about):'; S = 50; R = 'mshta esegue script remoti o inline (tecnica LOLBin)' }
-    @{ Rx = '(?i)regsvr32(\.exe)?.*/i:\s*["'']?https?'; S = 50; R = 'regsvr32 carica uno scriptlet remoto (tecnica "Squiblydoo")' }
-    @{ Rx = '(?i)rundll32(\.exe)?["'']?\s+.*(javascript:|vbscript:|mshtml,RunHTMLApplication)'; S = 50; R = 'rundll32 usato per eseguire script (tecnica LOLBin)' }
-    @{ Rx = '(?i)certutil(\.exe)?.*\s[-/](urlcache|decode|decodehex)'; S = 45; R = 'certutil usato per scaricare o decodificare file' }
-    @{ Rx = '(?i)bitsadmin(\.exe)?.*/(transfer|addfile|SetNotifyCmdLine)'; S = 35; R = 'bitsadmin usato per scaricare file o eseguire comandi' }
-    @{ Rx = '(?i)https?://\d{1,3}(\.\d{1,3}){3}'; S = 30; R = 'Contatta un indirizzo IP diretto invece di un dominio' }
-    @{ Rx = '(?i)(pastebin\.com|paste\.ee|transfer\.sh|discord(app)?\.com/api/webhooks|cdn\.discordapp\.com/attachments|api\.telegram\.org/bot|ngrok\.(io|app)|trycloudflare\.com|anonfiles|gofile\.io|temp\.sh|file\.io)'; S = 30; R = 'Usa un servizio spesso abusato dai malware per scaricare payload o inviare dati' }
-    @{ Rx = '(?i)(stratum\+(tcp|ssl)|--donate-level|xmrig|nicehash|nanopool|moneroocean|--cpu-max-threads-hint|\s-o\s+\S+:\d{3,5}\s.*-u\s)'; S = 60; R = 'Parametri tipici di un cryptominer (XMRig e simili)' }
-    @{ Rx = '(?i)(wscript|cscript)(\.exe)?["'']?\s+.*\\(appdata|temp|programdata|users\\public)\\'; S = 25; R = 'Script VBS/JS eseguito da una cartella utente' }
-    @{ Rx = '(?i)(add-mppreference|set-mppreference|DisableRealtimeMonitoring|ExclusionPath)'; S = 55; R = 'Modifica le impostazioni di Microsoft Defender' }
-    @{ Rx = '(?i)schtasks(\.exe)?.*/create'; S = 20; R = 'Crea a sua volta un''attivita'' pianificata' }
-    @{ Rx = '(?i)(vssadmin.*delete\s+shadows|wbadmin.*delete|bcdedit.*(recoveryenabled|safeboot))'; S = 55; R = 'Cancella i backup o modifica l''avvio di Windows' }
-    @{ Rx = '(?i)\\(appdata|temp)\\[^\\]+\.(vbs|vbe|js|jse|wsf|hta)\b'; S = 20; R = 'Script direttamente in AppData/Temp' }
-    @{ Rx = '(?i)(netsh.*firewall.*(add|set).*allow|netsh\s+advfirewall\s+set\s+\w+\s+state\s+off)'; S = 40; R = 'Modifica il firewall di Windows' }
-)
-
-function Get-CommandRisk {
-    param([string]$CommandLine)
-    $score = 0
-    $reasons = New-Object System.Collections.Generic.List[string]
-    $target = Resolve-CommandPath $CommandLine
-    $sha = $null; $signer = $null
-
-    # Programma lanciato per primo, poi i file citati negli argomenti (senza doppioni)
-    $files = New-Object System.Collections.Generic.List[string]
-    foreach ($f in @($target) + @(Get-EmbeddedPaths $CommandLine)) {
-        if ($f -and -not ($files -contains $f)) { $files.Add($f) }
-    }
-
-    # Se il programma lanciato e' un "host" di sistema (rundll32, wscript...)
-    # il carico vero e' il file passato come argomento.
-    $hostNames = 'rundll32\.exe|regsvr32\.exe|wscript\.exe|cscript\.exe|mshta\.exe|powershell\.exe|pwsh\.exe|cmd\.exe|conhost\.exe|javaw?\.exe|msiexec\.exe'
-    $payloadFound = $false
-
-    $fileScoreMax = 0
-    foreach ($f in $files) {
-        $fs = 0
-        if (-not [IO.Path]::IsPathRooted($f)) { continue }
-        $info = Get-FileInfo $f
-        if (-not $info.Exists) {
-            $fs += 10
-            $reasons.Add("Il file non esiste piu': $f (voce orfana o file cancellato dopo l'avvio)")
-        } else {
-            $isHost = [IO.Path]::GetFileName($f) -match "^($hostNames)$"
-            if (-not $isHost -and -not $payloadFound) {
-                $payloadFound = $true
-                $target = $f; $sha = $info.Sha256; $signer = $info.Signer
-            } elseif (-not $sha) {
-                $sha = $info.Sha256; $signer = $info.Signer
-            }
-            if ($info.IsMicrosoft) { continue }
-            $isScript = $f -match '(?i)\.(vbs|vbe|js|jse|wsf|wsh|ps1|bat|cmd|hta)$'
-            $userWritable = Test-UserWritablePath $f
-            # Uno script in Program Files/Windows e' modificabile solo da un amministratore
-            if ($isScript -and -not $userWritable) { continue }
-            switch ($info.SignatureStatus) {
-                'Valid' { }
-                'NotSigned' { $fs += 25; $reasons.Add("Non firmato digitalmente: $f") }
-                'HashMismatch' { $fs += 50; $reasons.Add("Firma digitale manomessa (il file e' stato modificato dopo la firma): $f") }
-                default { $fs += 30; $reasons.Add("Firma digitale non valida ($($info.SignatureStatus)): $f") }
-            }
-            if ($isScript) { $fs += 10; $reasons.Add("E' uno script, non un programma firmabile: $f") }
-            if ($userWritable) {
-                if ($info.SignatureStatus -eq 'Valid') { $fs += 5 }
-                else { $fs += 20; $reasons.Add("Si trova in una cartella utente/temporanea (AppData, Temp, ProgramData...): $f") }
-            }
-            if ($info.Hidden) { $fs += 15; $reasons.Add("Il file ha l'attributo nascosto/di sistema: $f") }
-            if ($info.SignatureStatus -ne 'Valid' -and (Test-RandomLookingName $f)) { $fs += 15; $reasons.Add("Nome del file dall'aspetto casuale: $f") }
-            if ($info.SignatureStatus -ne 'Valid' -and $info.Created -and $info.Created -gt (Get-Date).AddDays(-30)) {
-                $fs += 5; $reasons.Add("Creato negli ultimi 30 giorni ($($info.Created.ToString('dd/MM/yyyy')))")
-            }
-            if ($info.SignatureStatus -ne 'Valid' -and -not $info.Company -and -not $isScript) {
-                $fs += 5; $reasons.Add('Nessun produttore indicato nelle proprieta'' del file')
-            }
-        }
-        if ($fs -gt $fileScoreMax) { $fileScoreMax = $fs }
-    }
-    $score += $fileScoreMax
-
-    foreach ($p in $script:SuspiciousPatterns) {
-        if ($CommandLine -match $p.Rx) { $score += $p.S; $reasons.Add($p.R) }
-    }
-
-    return [pscustomobject]@{
-        Score = $score; Reasons = $reasons.ToArray(); Target = $target; Sha256 = $sha; Signer = $signer
-    }
-}
-
-# ---------------------------------------------------------------------------
-# Utilita'
+# Utilities
 # ---------------------------------------------------------------------------
 
 function Get-RegValues {
@@ -495,12 +349,12 @@ function Get-RegValues {
     $key = Get-Item -LiteralPath $Path -ErrorAction SilentlyContinue
     if (-not $key) { return @() }
     foreach ($n in $key.GetValueNames()) {
-        [pscustomobject]@{ Name = $(if ($n) { $n } else { '(Predefinito)' }); Value = $key.GetValue($n) }
+        [pscustomobject]@{ Name = $(if ($n) { $n } else { '(Default)' }); Value = $key.GetValue($n) }
     }
 }
 
-# Apre una chiave con l'API .NET partendo da un percorso stile PowerShell
-# (HKLM:\..., HKCU:\..., HKU:\SID\...). Molto piu' veloce dei cmdlet su grandi rami.
+# Opens a key with the .NET API from a PowerShell-style path (HKLM:\..., HKCU:\...,
+# HKU:\SID\...). Much faster than the cmdlets on large branches.
 function Open-RegistryKey {
     param([string]$Path)
     $m = [regex]::Match($Path, '^(HKLM|HKCU|HKU):\\?(.*)$')
@@ -518,8 +372,8 @@ function Get-RegValue {
     try { return (Get-ItemProperty -LiteralPath $Path -Name $Name -ErrorAction Stop).$Name } catch { return $null }
 }
 
-# Hive di tutti gli utenti caricati (non solo quello corrente: se avvii come
-# amministratore con un altro account, HKCU non e' piu' il tuo).
+# Hives of every loaded user (not just the current one: when you run as administrator
+# with another account, HKCU is no longer yours).
 function Get-UserHives {
     if (-not (Get-PSDrive -Name HKU -ErrorAction SilentlyContinue)) {
         New-PSDrive -Name HKU -PSProvider Registry -Root HKEY_USERS -Scope Script | Out-Null
@@ -540,7 +394,7 @@ function Get-ProcessTable {
     if (-not $script:ProcessTable) {
         $script:ProcessTable = @{}
         foreach ($p in Get-CimInstance Win32_Process -ErrorAction SilentlyContinue) {
-            # Alcuni processi riportano il percorso nel formato \\?\C:\...
+            # Some processes report their path as \\?\C:\...
             $exe = $p.ExecutablePath
             if ($exe -like '\\?\*') { $exe = $exe.Substring(4) }
             $script:ProcessTable[[int]$p.ProcessId] = [pscustomobject]@{
@@ -580,19 +434,19 @@ function Resolve-Shortcut {
     } catch { return $null }
 }
 
-# Come disattivare una voce del registro: serve l'amministratore se non e' nel ramo
-# dell'utente che usa l'app (HKCU o HKU\<il suo SID>).
+# How to disable a registry entry: administrator rights are needed unless it is in the
+# branch of the user running the app (HKCU or HKU\<their SID>).
 function New-RegistryRemedy {
     param([string]$Key, [string]$Name)
-    if (-not $Name -or $Name -eq '(Predefinito)') { return $null }
+    if (-not $Name -or $Name -eq '(Default)') { return $null }
     $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     $own = $Key -like 'HKCU:*' -or $Key -like "HKU:\$sid\*"
     return @{ Kind = 'RegistryValue'; Key = $Key; Name = $Name; Admin = -not $own }
 }
 
-# Vero se il comando lancia proprio questo CheckBackdoor.ps1 (stesso contenuto), per
-# esempio la verifica programmata dall'app. Un'attivita' che si chiama CheckBackdoor
-# ma esegue altro resta segnalata normalmente.
+# True when the command runs exactly this CheckBackdoor.ps1 (same content), for example
+# the check scheduled by the app. A task called CheckBackdoor that runs something else
+# is still reported as usual.
 function Test-OwnEngineCommand {
     param([string]$CommandLine)
     if (-not $script:EngineRoot) { return $false }
@@ -605,8 +459,8 @@ function Test-OwnEngineCommand {
     return $false
 }
 
-# Segreto cifrato con DPAPI per l'utente corrente (la chiave di VirusTotal salvata dall'app).
-# Solo lo stesso utente Windows, sullo stesso PC, puo' decifrarlo.
+# A secret encrypted with DPAPI for the current user (the VirusTotal key saved by the
+# app). Only the same Windows user, on the same PC, can decrypt it.
 $script:SecretEntropy = [Text.Encoding]::UTF8.GetBytes('CheckBackdoor.VirusTotal/1')
 function Read-ProtectedSecret {
     param([string]$Path)
@@ -617,7 +471,7 @@ function Read-ProtectedSecret {
         $plain = [Security.Cryptography.ProtectedData]::Unprotect($blob, $script:SecretEntropy, [Security.Cryptography.DataProtectionScope]::CurrentUser)
         return [Text.Encoding]::UTF8.GetString($plain)
     } catch {
-        Write-ScanWarning "Chiave di VirusTotal non leggibile: salvala di nuovo dalle impostazioni dell'app."
+        Write-ScanWarning 'The VirusTotal key cannot be read: save it again from the app settings.'
         return $null
     }
 }

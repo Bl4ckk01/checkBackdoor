@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Windows;
 
 namespace CheckBackdoor.App;
@@ -8,7 +8,7 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        // "--smoke <cartella>": una verifica vera e veloce senza finestra, per i test automatici
+        // "--smoke <folder>": a real, quick scan without a window, for automated tests
         if (e.Args.Length >= 2 && e.Args[0] == "--smoke")
         {
             ShutdownMode = ShutdownMode.OnExplicitShutdown;
@@ -19,9 +19,9 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Lancia il motore come farebbe l'interfaccia, ma senza chiedere l'amministratore e
-    /// saltando i controlli lenti. Scrive in smoke.log i tipi di evento ricevuti.
-    /// Codice di uscita: 0 se la verifica arriva a scan.completed, 1 altrimenti.
+    /// Starts the engine as the interface would, but without asking for the administrator
+    /// and skipping the slow checks. Writes the event types received to smoke.log.
+    /// Exit code: 0 if the scan reaches scan.completed, 1 otherwise.
     /// </summary>
     static int RunSmoke(string outDir)
     {

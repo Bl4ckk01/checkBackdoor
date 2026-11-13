@@ -5,16 +5,16 @@ using System.Text.Json;
 namespace CheckBackdoor.App;
 
 /// <summary>
-/// Avvia il motore PowerShell e segue il suo file di eventi (docs/EVENTI.md).
-/// Il motore puo' rilanciarsi come amministratore in un nuovo processo: per questo si
-/// leggono gli eventi da un file e si sorveglia il pid indicato dall'ultimo evento.
+/// Starts the PowerShell engine and follows its event file (docs/EVENTS.md).
+/// The engine can restart itself as administrator in a new process: that is why events
+/// are read from a file and the pid given by the latest event is watched.
 /// </summary>
 public sealed class ScanRunner : IDisposable
 {
-    /// <summary>Una riga di evento completa, cosi' come scritta dal motore.</summary>
+    /// <summary>A complete event line, as written by the engine.</summary>
     public event Action<string>? EventReceived;
 
-    /// <summary>La scansione si e' chiusa senza un evento finale (processo chiuso o mai partito).</summary>
+    /// <summary>The scan ended without a final event (process closed or never started).</summary>
     public event Action<string>? Aborted;
 
     public bool IsRunning { get; private set; }
@@ -23,14 +23,14 @@ public sealed class ScanRunner : IDisposable
     readonly CancellationTokenSource _stop = new();
     Process? _process;
 
-    // Tempo concesso al processo amministratore per scrivere il primo evento dopo la
-    // richiesta UAC: chi deve rispondere alla finestra di Windows puo' metterci un po'.
+    // Time given to the administrator process to write its first event after the UAC
+    // prompt: whoever has to answer the Windows dialog may take a while.
     static readonly TimeSpan ElevationGrace = TimeSpan.FromMinutes(3);
 
     public void Start(string engineScript, string outputDir, string runsDir, IEnumerable<string>? extraArgs = null)
     {
-        if (IsRunning) throw new InvalidOperationException("Una verifica e' gia' in corso.");
-        if (!File.Exists(engineScript)) throw new FileNotFoundException("Motore di scansione non trovato.", engineScript);
+        if (IsRunning) throw new InvalidOperationException("A scan is already running.");
+        if (!File.Exists(engineScript)) throw new FileNotFoundException("Scan engine not found.", engineScript);
 
         Directory.CreateDirectory(runsDir);
         EventsPath = Path.Combine(runsDir, $"scan-{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}.jsonl");
@@ -47,12 +47,12 @@ public sealed class ScanRunner : IDisposable
             psi.ArgumentList.Add(a);
         foreach (var a in extraArgs ?? []) psi.ArgumentList.Add(a);
 
-        _process = Process.Start(psi) ?? throw new InvalidOperationException("Impossibile avviare PowerShell.");
+        _process = Process.Start(psi) ?? throw new InvalidOperationException("Cannot start PowerShell.");
         IsRunning = true;
         _ = Task.Run(() => FollowAsync(_process.Id, _stop.Token));
     }
 
-    /// <summary>Chiede al motore di fermarsi prima del prossimo controllo (vedi "Annullare una scansione").</summary>
+    /// <summary>Asks the engine to stop before the next check (see "Cancelling a scan").</summary>
     public void RequestCancel()
     {
         if (IsRunning && EventsPath is not null) File.WriteAllText(EventsPath + ".cancel", "");
@@ -76,7 +76,7 @@ public sealed class ScanRunner : IDisposable
                 int read;
                 while ((read = await reader.ReadAsync(buffer, ct)) > 0) pending.Append(buffer, 0, read);
 
-                // Solo righe complete: l'ultima senza "\n" puo' essere ancora in scrittura
+                // Complete lines only: the last one without "\n" may still be being written
                 string text = pending.ToString();
                 int last = text.LastIndexOf('\n');
                 if (last >= 0)
@@ -96,14 +96,14 @@ public sealed class ScanRunner : IDisposable
 
                 if (!IsAlive(watchedPid))
                 {
-                    // Dopo la richiesta UAC il processo che l'ha fatta esce subito: si aspetta il nuovo
+                    // After the UAC prompt the process that asked exits at once: wait for the new one
                     if (elevating && DateTime.UtcNow - elevatingSince < ElevationGrace) { await Task.Delay(300, ct); continue; }
-                    // Un ultimo giro di lettura: gli eventi finali potrebbero essere arrivati proprio ora
+                    // One last read: the final events may have arrived just now
                     if (!sawDead) { sawDead = true; await Task.Delay(500, ct); continue; }
                     Finish();
                     Aborted?.Invoke(elevating
-                        ? "La richiesta dei privilegi di amministratore non ha avuto risposta."
-                        : "Il processo di scansione si e' chiuso senza concludere la verifica.");
+                        ? "The administrator prompt got no answer."
+                        : "The scan process closed without finishing the scan.");
                     return;
                 }
                 await Task.Delay(200, ct);
@@ -113,7 +113,7 @@ public sealed class ScanRunner : IDisposable
         catch (Exception ex)
         {
             Finish();
-            Aborted?.Invoke("Errore nel leggere l'avanzamento della verifica: " + ex.Message);
+            Aborted?.Invoke("Error reading the scan progress: " + ex.Message);
         }
     }
 
@@ -137,8 +137,8 @@ public sealed class ScanRunner : IDisposable
             using var p = Process.GetProcessById(pid);
             return !p.HasExited;
         }
-        catch (ArgumentException) { return false; }                 // nessun processo con quel pid
-        catch (System.ComponentModel.Win32Exception) { return true; } // processo amministratore: non leggibile, ma esiste
+        catch (ArgumentException) { return false; }                 // no process with that pid
+        catch (System.ComponentModel.Win32Exception) { return true; } // administrator process: not readable, but it exists
         catch (InvalidOperationException) { return false; }
     }
 

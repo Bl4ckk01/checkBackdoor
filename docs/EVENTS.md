@@ -1,107 +1,107 @@
-# Eventi della scansione (`checkbackdoor.events/1`)
+# Scan events (`checkbackdoor.events/1`)
 
-Con `-EventsFile <percorso>` la scansione scrive il suo avanzamento in un file **JSON Lines**:
-una riga per evento, aggiunta in coda appena succede. È il contratto tra il motore in PowerShell
-e chi lo segue dal vivo, come l'app con interfaccia.
+With `-EventsFile <path>` the scan writes its progress to a **JSON Lines** file: one line per
+event, appended as soon as it happens. It is the contract between the PowerShell engine and
+whoever follows it live, such as the app with an interface.
 
 ```powershell
 .\CheckBackdoor.ps1 -EventsFile "$env:TEMP\scan-1234.jsonl" -Quiet -NoOpen
 ```
 
-`-Quiet` toglie ogni output dalla console. Se serve rilanciarsi come amministratore, la nuova
-finestra è nascosta e non resta in attesa di INVIO.
+`-Quiet` removes all console output. If the scan needs to restart as administrator, the new
+window is hidden and does not wait for ENTER.
 
-## Perché un file e non la console
+## Why a file and not the console
 
-Quando la scansione chiede i privilegi di amministratore (UAC), Windows avvia un **nuovo
-processo** che non può scrivere sulla console di chi l'ha lanciato. Può però scrivere sullo
-stesso file: chi legge vede gli eventi del processo amministratore subito dopo `scan.elevating`.
+When the scan asks for administrator rights (UAC), Windows starts a **new process** that
+cannot write to the console of whoever started it. It can, however, write to the same file:
+the reader sees the events of the administrator process right after `scan.elevating`.
 
-## Forma di ogni riga
+## Shape of each line
 
 ```json
 {"schema":"checkbackdoor.events/1","seq":3,"time":"2026-11-10T21:04:12.3456789+01:00","pid":1234,"type":"check.started","data":{...}}
 ```
 
-| Campo | Significato |
+| Field | Meaning |
 |---|---|
-| `schema` | Versione del formato. Cambia (`/2`) solo con modifiche incompatibili; campi nuovi in `data` non cambiano la versione. |
-| `seq` | Numero progressivo **dentro un processo**: riparte da 1 nel processo amministratore. Per l'ordine globale usa l'ordine delle righe. |
-| `time` | Data e ora ISO 8601 con fuso orario. |
-| `pid` | Processo che ha scritto l'evento. Dopo `scan.elevating` diventa quello del processo amministratore: è il processo da sorvegliare. |
-| `type` | Tipo di evento, vedi sotto. |
-| `data` | Contenuto, diverso per tipo. |
+| `schema` | Format version. It changes (`/2`) only with incompatible changes; new fields in `data` do not change the version. |
+| `seq` | Sequence number **within one process**: it restarts from 1 in the administrator process. For the global order use the order of the lines. |
+| `time` | ISO 8601 date and time with time zone. |
+| `pid` | The process that wrote the event. After `scan.elevating` it becomes the administrator process: that is the process to watch. |
+| `type` | Event type, see below. |
+| `data` | Content, different for each type. |
 
-Il file viene **aggiunto, mai sovrascritto**: usa un file nuovo per ogni scansione. Si può leggere
-mentre la scansione scrive (è aperto con condivisione in lettura). Una riga è completa solo quando
-termina con `\n`: se l'ultima riga letta non ha il ritorno a capo, rileggila al giro successivo.
+The file is **appended to, never overwritten**: use a new file for each scan. It can be read
+while the scan writes (it is opened with read sharing). A line is complete only when it ends
+with `\n`: if the last line read has no line break, read it again on the next pass.
 
-## Tipi di evento
+## Event types
 
-### Prima della scansione
+### Before the scan
 
-| Tipo | `data` | Quando |
+| Type | `data` | When |
 |---|---|---|
-| `scan.elevating` | `message` | Sta per chiedere i privilegi di amministratore. Segue `scan.started` dal processo amministratore, oppure un `warning` "Privilegi negati" e `scan.started` dallo stesso processo. |
+| `scan.elevating` | `message` | It is about to ask for administrator rights. Followed by `scan.started` from the administrator process, or by a "rights denied" `warning` and `scan.started` from the same process. |
 
-### Durante la scansione
+### During the scan
 
-| Tipo | `data` | Note |
+| Type | `data` | Notes |
 |---|---|---|
-| `scan.started` | `version`, `mode` (`Scan` o `File`), `target` (il file controllato con `-File`), `computer`, `user`, `admin`, `deep`, `skipped[]`, `compareTo`, `compareLast`, `virusTotal`, `outputDir`, `checks[]` (`id`, `label`) | Elenca i controlli che verranno eseguiti, nell'ordine. |
-| `check.started` | `id`, `label`, `index`, `total` | `index`/`total` valgono per i controlli di `checks[]`. |
-| `finding` | `check`, `finding` | Una segnalazione nuova. `finding` ha gli stessi campi del report JSON, incluso `Id`. `Remedy` è presente solo se l'elemento si può disattivare con `Azioni.ps1` (`Kind`: `RegistryValue`, `File`, `ScheduledTask` o `Service`; `Admin`: se serve l'amministratore). |
-| `warning` | `check`, `message` | Avviso non bloccante (non amministratore, lista bianca non valida, limite di VirusTotal). |
-| `check.completed` | `id`, `status` (`ok` / `error`), `error`, `durationMs`, `findings` | Un errore in un controllo non ferma gli altri. |
-| `finding.updated` | `check`, `finding` | Una segnalazione già inviata cambia: oggi solo dopo VirusTotal (gravità e motivi). Sostituiscila usando `Id`. |
+| `scan.started` | `version`, `mode` (`Scan` or `File`), `target` (the file checked with `-File`), `computer`, `user`, `admin`, `deep`, `skipped[]`, `compareTo`, `compareLast`, `virusTotal`, `outputDir`, `checks[]` (`id`, `label`) | Lists the checks that will run, in order. |
+| `check.started` | `id`, `label`, `index`, `total` | `index`/`total` apply to the checks in `checks[]`. |
+| `finding` | `check`, `finding` | A new finding. `finding` has the same fields as the JSON report, `Id` included. `Remedy` is present only if the item can be disabled with `Actions.ps1` (`Kind`: `RegistryValue`, `File`, `ScheduledTask` or `Service`; `Admin`: whether the administrator is needed). |
+| `warning` | `check`, `message` | Non-blocking warning (not administrator, invalid allowlist, VirusTotal limit). |
+| `check.completed` | `id`, `status` (`ok` / `error`), `error`, `durationMs`, `findings` | An error in one check does not stop the others. |
+| `finding.updated` | `check`, `finding` | A finding already sent changes: today only after VirusTotal (severity and reasons). Replace it using `Id`. |
 
-Dopo i controlli di `checks[]` possono arrivare due passi extra, con i loro `check.started` e
-`check.completed` ma **senza** `index`/`total`:
+After the checks in `checks[]` two extra steps may arrive, with their own `check.started` and
+`check.completed` but **without** `index`/`total`:
 
-- `VirusTotal`, se è stata fornita una chiave API;
-- `Compare`, il confronto con una scansione precedente, che emette segnalazioni nella categoria
-  "Novita' dalla scansione precedente".
+- `VirusTotal`, if an API key was provided;
+- `Compare`, the comparison with a previous scan, which emits findings in the category
+  "Changes since the previous scan".
 
-### Fine
+### End
 
-| Tipo | `data` |
+| Type | `data` |
 |---|---|
-| `scan.completed` | `exitCode` (0 nessun indizio, 1 da verificare, 2 rischio alto), `durationMs`, `ignored` (elementi nascosti dalla lista bianca), `counts` (`Alto`, `Medio`, `Basso`, `Info`), `errors[]`, `report` (`html`, `json`, `csv`: percorsi completi) |
+| `scan.completed` | `exitCode` (0 no clues, 1 to review, 2 high risk), `durationMs`, `ignored` (items hidden by the allowlist), `counts` (`High`, `Medium`, `Low`, `Info`), `errors[]`, `report` (`html`, `json`, `csv`: full paths) |
 | `scan.failed` | `message`, `check` |
 | `scan.cancelled` | `durationMs`, `message` |
 
-Ogni scansione termina con **uno solo** di questi tre.
+Every scan ends with **exactly one** of these three.
 
-## Annullare una scansione
+## Cancelling a scan
 
-Crea un file con lo stesso nome del file di eventi più `.cancel` (ad esempio `scan-1234.jsonl.cancel`).
-La scansione lo controlla prima di ogni passo, lo cancella, scrive `scan.cancelled` ed esce con
-codice 3, senza produrre il report. Si usa un file e non un segnale al processo perché un'app che
-gira come utente normale non può terminare il processo amministratore. Un controllo già iniziato
-termina prima di fermarsi: il più lento, sui file, può richiedere un paio di minuti. Se il processo indicato dall'ultimo `pid` termina
-senza nessuno dei due, la scansione è stata interrotta (chiusura forzata, crash).
+Create a file with the same name as the event file plus `.cancel` (for example
+`scan-1234.jsonl.cancel`). The scan checks for it before every step, deletes it, writes
+`scan.cancelled` and exits with code 3, without producing the report. A file is used instead of
+a signal to the process because an app running as a normal user cannot terminate the
+administrator process. A check that already started finishes before stopping: the slowest
+one, on files, can take a couple of minutes. If the process given by the latest `pid` ends
+without any of these events, the scan was interrupted (forced close, crash).
 
-## L'ID delle segnalazioni
+## Finding IDs
 
-`Id` sono 16 cifre esadecimali calcolate da area, titolo, percorso e dettaglio (senza distinguere
-maiuscole e minuscole). Lo stesso elemento ha lo stesso `Id` in ogni scansione, anche se la sua
-gravità cambia. Serve per aggiornare una segnalazione (`finding.updated`), per confrontare scansioni
-e, in seguito, per le azioni sul singolo elemento.
+`Id` is 16 hexadecimal digits computed from area, title, path and detail (case-insensitive).
+The same item has the same `Id` in every scan, even if its severity changes. It is used to
+update a finding (`finding.updated`), to compare scans and for the actions on a single item.
 
-Gli elementi in lista bianca (`allowlist.json`, `allowlist.local.json`) vengono scartati **durante**
-la scansione: non generano eventi e sono contati in `ignored`.
+Allowlisted items (`allowlist.json`, `allowlist.local.json`) are dropped **during** the scan:
+they generate no events and are counted in `ignored`.
 
-## Esempio
+## Example
 
 ```jsonl
-{"schema":"checkbackdoor.events/1","seq":1,"time":"...","pid":4120,"type":"scan.started","data":{"version":"1.2.0","admin":true,"checks":[{"id":"Security","label":"Difese di Windows (Defender, esclusioni, UAC, aggiornamenti)"}, ...]}}
-{"schema":"checkbackdoor.events/1","seq":2,"time":"...","pid":4120,"type":"check.started","data":{"id":"Security","label":"Difese di Windows ...","index":1,"total":11}}
-{"schema":"checkbackdoor.events/1","seq":3,"time":"...","pid":4120,"type":"finding","data":{"check":"Security","finding":{"Id":"4a4c75afd4144cd0","Severity":"Medio","Category":"Difese di Windows","Title":"...","Reasons":["..."]}}}
+{"schema":"checkbackdoor.events/1","seq":1,"time":"...","pid":4120,"type":"scan.started","data":{"version":"1.2.0","admin":true,"checks":[{"id":"Security","label":"Windows defenses (Defender, exclusions, UAC, updates)"}, ...]}}
+{"schema":"checkbackdoor.events/1","seq":2,"time":"...","pid":4120,"type":"check.started","data":{"id":"Security","label":"Windows defenses ...","index":1,"total":11}}
+{"schema":"checkbackdoor.events/1","seq":3,"time":"...","pid":4120,"type":"finding","data":{"check":"Security","finding":{"Id":"4a4c75afd4144cd0","Severity":"Medium","Category":"Windows defenses","Title":"...","Reasons":["..."]}}}
 {"schema":"checkbackdoor.events/1","seq":4,"time":"...","pid":4120,"type":"check.completed","data":{"id":"Security","status":"ok","error":null,"durationMs":2612,"findings":1}}
-{"schema":"checkbackdoor.events/1","seq":40,"time":"...","pid":4120,"type":"scan.completed","data":{"exitCode":1,"counts":{"Alto":0,"Medio":6,"Basso":5,"Info":3},"report":{"html":"C:\\...\\scansione_20261110_210455.html", ...}}}
+{"schema":"checkbackdoor.events/1","seq":40,"time":"...","pid":4120,"type":"scan.completed","data":{"exitCode":1,"counts":{"High":0,"Medium":6,"Low":5,"Info":3},"report":{"html":"C:\\...\\scan_20261110_210455.html", ...}}}
 ```
 
-## Il report JSON
+## The JSON report
 
-Anche il file `scansione_*.json` ha una versione: `Meta.Schema` vale `checkbackdoor.report/1`. Ogni
-segnalazione contiene `Id` e `Check` (il controllo che l'ha prodotta), come negli eventi.
+The `scan_*.json` file has a version too: `Meta.Schema` is `checkbackdoor.report/1`. Every
+finding contains `Id` and `Check` (the check that produced it), as in the events.

@@ -1,188 +1,185 @@
 # CheckBackdoor
 
-*[Read in English](README.en.md)*
+A Windows scanner that looks for **backdoors, RATs, cryptominers and other signs of compromise**,
+made for people who downloaded executables, cracks or games from unofficial sources.
 
-Scanner per Windows che cerca **backdoor, RAT, cryptominer e altri segni di compromissione**,
-pensato per chi ha scaricato eseguibili, crack o giochi da fonti non ufficiali.
+- **Read-only scan**: the scan does not change, delete or quarantine anything. The app disables
+  an item only if you ask, always with a backup and an Undo button.
+- **The script needs no installation**: it uses PowerShell 5.1, already present in every
+  Windows 10/11.
+- **No data sent** to the internet (except hashes, and only if you turn on VirusTotal).
+- A readable **HTML** report, plus **JSON** and **CSV**. The report works offline: opening it
+  makes no request to the internet.
 
-- **Verifica in sola lettura**: la scansione non modifica, non cancella e non mette in
-  quarantena nulla. L'app disattiva un elemento solo se lo chiedi, sempre con un backup e il
-  pulsante Annulla.
-- **Lo script non richiede installazione**: usa PowerShell 5.1, già presente in ogni Windows 10/11.
-- **Nessun dato inviato** a internet (tranne gli hash, e solo se attivi VirusTotal).
-- Report **HTML** leggibile, più **JSON** e **CSV**. Il report funziona offline: aprirlo
-  non fa nessuna richiesta a internet.
-
-> **Avviso.** CheckBackdoor è un secondo parere, non un antivirus. Cerca le tracce che una
-> backdoor lascia per avviarsi e comunicare, ma un rootkit già attivo può nascondersi a Windows
-> stesso. "Nessun indizio" **non garantisce** che il PC sia pulito: se hai dubbi fondati, usa
-> anche Microsoft Defender Offline e, sui PC con dati importanti, valuta la reinstallazione di
-> Windows. Il software è fornito "così com'è", senza garanzie (vedi [LICENSE](LICENSE)).
-> Scaricalo solo da questa repository: leggi [SECURITY.md](SECURITY.md).
+> **Warning.** CheckBackdoor is a second opinion, not an antivirus. It looks for the traces a
+> backdoor leaves to start and communicate, but a rootkit that is already active can hide from
+> Windows itself. "No clues" **does not guarantee** that the PC is clean: if you have good
+> reasons to doubt, also use Microsoft Defender Offline and, on PCs with important data,
+> consider reinstalling Windows. The software is provided "as is", without warranty (see
+> [LICENSE](LICENSE)). Download it only from this repository: read [SECURITY.md](SECURITY.md).
 
 ## Download
 
-Dalla pagina **Releases**:
+From the **Releases** page:
 
-| File | Cos'è |
+| File | What it is |
 |---|---|
-| `CheckBackdoor-<versione>-setup.exe` | Installatore per l'utente corrente (non serve l'amministratore). |
-| `CheckBackdoor-<versione>-win-x64.zip` | App portatile: estrai e avvia `CheckBackdoor.exe`. |
-| `CheckBackdoor-<versione>-script.zip` | Solo il motore PowerShell, per chi preferisce lo script. |
-| `SHA256SUMS.txt` | Impronte per verificare i file scaricati (`Get-FileHash file -Algorithm SHA256`). |
+| `CheckBackdoor-<version>-setup.exe` | Installer. Installs to Program Files, so it asks for administrator rights. |
+| `CheckBackdoor-<version>-win-x64.zip` | Portable app: extract it and start `CheckBackdoor.exe`. |
+| `CheckBackdoor-<version>-script.zip` | The PowerShell engine only, for those who prefer the script. |
+| `SHA256SUMS.txt` | Hashes to verify the downloaded files (`Get-FileHash file -Algorithm SHA256`). |
 
-Se i file non sono firmati, Windows SmartScreen mostra un avviso: scegli *Ulteriori
-informazioni* e poi *Esegui comunque*, solo dopo aver controllato l'impronta.
+If the files are not signed, Windows SmartScreen shows a warning: choose *More info* and then
+*Run anyway*, only after checking the hash.
 
-## Avvio rapido
+## Quick start
 
-1. Doppio clic su **`Avvia-Scansione.bat`**.
-2. Accetta la richiesta di privilegi di amministratore (senza, alcuni controlli importanti
-   come le esclusioni di Defender e WMI sono incompleti).
-3. Alla fine si apre il report nel browser. I file restano nella cartella `report\`.
+1. Double-click **`Start-Scan.bat`**.
+2. Accept the administrator prompt (without it, some important checks such as Defender
+   exclusions and WMI are incomplete).
+3. At the end the report opens in the browser. The files stay in the `report\` folder.
 
-Da PowerShell:
+From PowerShell:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\CheckBackdoor.ps1
 ```
 
-### App con interfaccia (anteprima)
+### App with an interface
 
-In `app\` c'è la prima versione dell'app per Windows. Offre:
+In `app\` there is the Windows app. It offers:
 
-- la Home con l'ultimo verdetto;
-- la verifica in corso, con le aree che si spuntano dal vivo e il pulsante Annulla;
-- il controllo di un file trascinandolo nella finestra;
-- i risultati nella stessa grafica del report, con un'azione su ogni segnalazione:
-  - **Mostra il file** in Esplora file;
-  - **Ignora nelle prossime verifiche** (si ripristina dalle impostazioni);
-  - **Disattiva**, per voci di avvio, file nella cartella Esecuzione automatica, attività
-    pianificate e servizi. Non cancella mai nulla: prima salva un backup, e **Annulla** riporta
-    tutto com'era;
-- lo **Storico** delle verifiche e il **Confronto** tra due verifiche: segnalazioni nuove e
-  sparite, elementi comparsi, modificati (di solito aggiornamenti) e rimossi;
-- le **Impostazioni**: chiave di VirusTotal (cifrata con DPAPI per il tuo utente Windows, non
-  passa mai dalla riga di comando), **verifica programmata** settimanale, modifiche fatte con
-  il loro Annulla, elementi ignorati.
+- the Home with the latest verdict;
+- the scan in progress, with the areas ticking off live and a Cancel button;
+- checking a file by dropping it on the window;
+- the results with the same look as the report, with an action on each finding:
+  - **Show the file** in File Explorer;
+  - **Ignore in future scans** (restored from the settings);
+  - **Disable**, for startup entries, files in the Startup folder, scheduled tasks and
+    services. It never deletes anything: it saves a backup first, and **Undo** puts everything
+    back as it was;
+- the scan **History** and the **Comparison** between two scans: new and gone findings, items
+  added, changed (usually updates) and removed;
+- the **Settings**: VirusTotal key (encrypted with DPAPI for your Windows user, it never goes
+  through the command line), weekly **scheduled scan**, changes made with their Undo, ignored
+  items.
 
-L'app gira come utente normale: solo la verifica e le azioni che toccano parti di sistema
-(HKLM, attività, servizi) chiedono i privilegi di amministratore. L'interfaccia non carica
-nulla da internet. Report, backup e impostazioni restano in `%LOCALAPPDATA%\CheckBackdoor`.
+The app runs as a normal user: only the scan and the actions that touch system parts (HKLM,
+tasks, services) ask for administrator rights. The interface loads nothing from the internet.
+Reports, backups and settings stay in `%LOCALAPPDATA%\CheckBackdoor`; backups of changes made
+as administrator go to `%ProgramData%\CheckBackdoor\backup`, which only administrators can write.
 
-La verifica programmata è un'attività di Utilità di pianificazione dell'utente
-(`\CheckBackdoor\Verifica settimanale`) e gira senza privilegi di amministratore. CheckBackdoor
-la riconosce come propria solo se lancia esattamente il suo `CheckBackdoor.ps1` (stesso
-contenuto): un'attività con lo stesso nome che esegue altro viene segnalata come le altre.
+The scheduled scan is a Task Scheduler task of the user (`\CheckBackdoor\Weekly scan`) and
+runs without administrator rights. CheckBackdoor recognizes it as its own only if it runs
+exactly its own `CheckBackdoor.ps1` (same content): a task with the same name that runs
+something else is flagged like the others.
 
-Per compilarla serve .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10`):
+To build it you need the .NET 10 SDK (`winget install Microsoft.DotNet.SDK.10`):
 
 ```powershell
 dotnet build app\CheckBackdoor.App -c Release
 .\app\CheckBackdoor.App\bin\Release\net10.0-windows\CheckBackdoor.exe
 ```
 
-Non c'è ancora un installatore: arriverà con la prima release ([ROADMAP.md](ROADMAP.md)).
+### Check a file before opening it
 
-### Controllare un file prima di aprirlo
-
-Trascina un file (o una cartella) sopra **`Controlla-File.bat`**. Oppure:
+Drop a file (or a folder) on **`Check-File.bat`**. Or:
 
 ```powershell
 .\CheckBackdoor.ps1 -File "$env:USERPROFILE\Downloads\setup.exe"
 ```
 
-Il file viene solo letto, mai eseguito, e non servono i privilegi di amministratore. Il controllo
-riguarda:
+The file is only read, never run, and no administrator rights are needed. The check covers:
 
-- la **firma digitale**: assente, valida o manomessa;
-- il **sito da cui è stato scaricato**;
-- i **nomi ingannevoli**: `foto.jpg.exe`, il carattere invisibile che inverte il testo, spazi
-  prima dell'estensione;
-- i **compressori** usati per nascondere il codice (UPX, Themida, VMProtect...);
-- gli eseguibili **gonfiati di zeri** per superare i limiti di antivirus e VirusTotal (trucco
-  tipico degli stealer);
-- gli **archivi zip** che contengono collegamenti o doppie estensioni;
-- nelle cartelle dei giochi, le **DLL sostituite**: copie non firmate di DLL di Windows, che il
-  programma caricherebbe al posto delle originali, e DLL del client di gioco modificate da un
-  crack.
+- the **digital signature**: missing, valid or tampered;
+- the **site it was downloaded from**;
+- **misleading names**: `photo.jpg.exe`, the invisible character that reverses the text,
+  spaces before the extension;
+- the **packers** used to hide code (UPX, Themida, VMProtect...);
+- executables **inflated with zeros** to exceed the limits of antivirus products and
+  VirusTotal (a typical stealer trick);
+- **zip archives** that contain shortcuts or double extensions;
+- in game folders, **replaced DLLs**: unsigned copies of Windows DLLs, which the program
+  would load instead of the originals, and game client DLLs changed by a crack.
 
-Con `-VirusTotalApiKey` verifica l'hash anche quando non trova indizi. I risultati si chiamano
-`controllo_*` e non interferiscono con il confronto tra scansioni. La lista bianca qui non si
-applica: se chiedi di controllare un file, vedi sempre il risultato.
+With `-VirusTotalApiKey` it checks the hash even when it finds no clues. The results are named
+`check_*` and do not interfere with the comparison between scans. The allowlist does not apply
+here: if you ask to check a file, you always see the result.
 
-## Opzioni
+## Options
 
-| Parametro | Cosa fa |
+| Parameter | What it does |
 |---|---|
-| `-File percorso` | Controlla solo quel file o quella cartella, prima di aprirlo (vedi sopra). |
-| `-Deep` | Scansione più profonda delle cartelle utente, incluse le DLL. Più lenta. |
-| `-CompareLast` | Confronta con l'ultima scansione e mostra **cosa è cambiato**. |
-| `-CompareTo file.json` | Confronta con una scansione specifica. |
-| `-VirusTotalApiKey CHIAVE` | Verifica gli hash dei file sospetti su VirusTotal (o variabile `VT_API_KEY`). |
-| `-VirusTotalKeyFile file` | Come sopra, con la chiave cifrata con DPAPI per l'utente corrente (la scrive l'app). |
-| `-AllowlistFile file` | Lista bianca in più (l'app ci tiene gli elementi che hai scelto di ignorare). |
-| `-VirusTotalMax 20` | Numero massimo di hash da verificare (API gratuita: 4 al minuto). |
-| `-Skip Network,FileSystem` | Salta alcuni controlli. |
-| `-NoOpen` | Non apre il report alla fine. |
-| `-NoElevate` | Non chiede i privilegi di amministratore. |
-| `-EventsFile file.jsonl` | Scrive avanzamento e segnalazioni mentre arrivano, per un'interfaccia che segue la scansione ([formato](docs/EVENTI.md)). |
-| `-Quiet` | Nessun output in console; con `-EventsFile`, anche la finestra amministratore resta nascosta. |
+| `-File path` | Checks only that file or folder, before opening it (see above). |
+| `-Deep` | Deeper scan of the user folders, DLLs included. Slower. |
+| `-CompareLast` | Compares with the last scan and shows **what changed**. |
+| `-CompareTo file.json` | Compares with a specific scan. |
+| `-VirusTotalApiKey KEY` | Looks up the hashes of suspicious files on VirusTotal (or the `VT_API_KEY` variable). |
+| `-VirusTotalKeyFile file` | As above, with the key encrypted with DPAPI for the current user (the app writes it). |
+| `-AllowlistFile file` | An extra allowlist (the app keeps the items you chose to ignore there). |
+| `-VirusTotalMax 20` | Maximum number of hashes to look up (free API: 4 per minute). |
+| `-Skip Network,FileSystem` | Skips some checks. |
+| `-NoOpen` | Does not open the report at the end. |
+| `-NoElevate` | Does not ask for administrator rights. |
+| `-EventsFile file.jsonl` | Writes progress and findings as they arrive, for an interface that follows the scan ([format](docs/EVENTS.md)). |
+| `-Quiet` | No console output; with `-EventsFile`, the administrator window stays hidden too. |
 
-Codice di uscita: `2` = trovati elementi ad alto rischio, `1` = elementi da verificare, `0` = nulla,
-`3` = verifica annullata, `4` = mancano dei file di CheckBackdoor (di solito messi in quarantena dall'antivirus).
+Exit code: `2` = high-risk items found, `1` = items to review, `0` = nothing,
+`3` = scan cancelled, `4` = CheckBackdoor files are missing (usually quarantined by the antivirus).
 
-### Il trucco più utile: prima e dopo
+### The most useful trick: before and after
 
-Prima di provare un programma di cui non ti fidi:
+Before trying a program you do not trust:
 
 ```powershell
-.\CheckBackdoor.ps1                 # scansione di riferimento
-# ...installi/avvii il programma, riavvii il PC...
-.\CheckBackdoor.ps1 -CompareLast    # mostra tutte le voci di avvio, servizi, esclusioni... nuove
+.\CheckBackdoor.ps1                 # baseline scan
+# ...install/start the program, restart the PC...
+.\CheckBackdoor.ps1 -CompareLast    # shows every new startup entry, service, exclusion...
 ```
 
-Così vedi esattamente cosa ha aggiunto al sistema.
+This way you see exactly what it added to the system.
 
-## Cosa controlla
+## What it checks
 
-| Modulo | Controlli |
+| Module | Checks |
 |---|---|
-| **Difese di Windows** | Defender spento, **esclusioni** (il segnale n°1 dei crack), criteri che lo disattivano, cronologia delle minacce rilevate, Windows Update/firewall disabilitati o rimossi, UAC, programmi di accessibilità sostituiti (sethc/utilman), avvio forzato in Modalità provvisoria |
-| **Avvio automatico** | Chiavi Run/RunOnce di tutti gli utenti, cartelle Esecuzione automatica, Winlogon, IFEO, SilentProcessExit, AppInit_DLLs, LSA, BootExecute, Netsh, Print monitor, Active Setup, AutoRun di cmd, script di logon, screensaver, dirottamento COM, cartella Esecuzione automatica spostata, profili PowerShell, processi BITS con comando, AppCertDlls, database di compatibilità (SDB), componenti aggiuntivi e chiave "Office test", provider Winsock |
-| **Attività pianificate** | Tutte le azioni, attività nascoste (tecnica Tarrask), attività che si mimetizzano in `\Microsoft\`, attività presenti solo come file XML |
-| **Servizi e driver** | Eseguibile o DLL di ogni servizio, driver non firmati (rootkit), servizi in Modalità provvisoria (Crackonosh), RDP Wrapper |
-| **WMI** | Sottoscrizioni permanenti che eseguono comandi (persistenza "senza file") |
-| **Processi** | Processi travestiti da processi di sistema, nomi simili (svch0st), genitori anomali, righe di comando sospette, **uso CPU anomalo (miner)** |
-| **Rete** | Porte in ascolto, connessioni verso IP pubblici, porte di RAT noti, file hosts, proxy, firewall, software di controllo remoto (AnyDesk, NetSupport...), server SSH |
-| **Browser** | Estensioni di Chrome, Edge, Brave, Opera, Vivaldi e Firefox: quelle segnalate dal browser come malware, caricate da una cartella o dalla riga di comando, imposte da un criterio, non provenienti da uno store o aggiornate da un server privato. Criteri che dirottano ricerca, pagina iniziale o proxy, o bloccano gli strumenti per sviluppatori. Collegamenti e processi del browser avviati con `--load-extension` o `--remote-debugging-port` (usati dagli stealer per rubare i cookie). Legge solo i dati delle estensioni, mai cronologia, cookie o password |
-| **Iniezioni nelle app** | Codice aggiunto a Discord, Discord Canary/PTB e Lightcord (il file `index.js` che gli stealer modificano per rubare il token a ogni avvio; BetterDiscord riconosciuto) e ai wallet Exodus e Atomic (codice modificato dopo l'installazione o con canali di invio dei dati) |
-| **Account** | Amministratori sconosciuti, account nascosti, Administrator/Guest attivi, Desktop remoto, WinRM |
-| **Certificati** | Certificati radice aggiunti (intercettazione HTTPS) |
-| **File sospetti** | Eseguibili non firmati, script VBS/JS/HTA, file nascosti, nomi casuali e flussi ADS in AppData, Temp, ProgramData, Pubblica, Cestino |
-| **Linea temporale** | Ultimi 30 giorni dai registri di Windows: servizi installati e poi rimossi (7045), Defender spento o con esclusioni aggiunte (5001, 5007), minacce trovate e non rimosse (1116-1119), account creati o resi amministratori (4720, 4732), script PowerShell sospetti (4104) e programmi avviati da Download, Desktop o Temp (chiave BAM). Nel report c'è una sezione con gli eventi in ordine di data. |
+| **Windows defenses** | Defender off, **exclusions** (the number one sign of cracks), policies that turn it off, history of detected threats, Windows Update/firewall disabled or removed, UAC, accessibility programs replaced (sethc/utilman), forced boot into Safe Mode |
+| **Autostart** | Run/RunOnce keys of all users, Startup folders, Winlogon, IFEO, SilentProcessExit, AppInit_DLLs, LSA, BootExecute, Netsh, print monitors, Active Setup, cmd AutoRun, logon scripts, screensaver, COM hijacking, moved Startup folder, PowerShell profiles, BITS jobs with a command, AppCertDlls, compatibility databases (SDB), Office add-ins and the "Office test" key, Winsock providers |
+| **Scheduled tasks** | All actions, hidden tasks (Tarrask technique), tasks that blend in under `\Microsoft\`, tasks present only as XML files |
+| **Services and drivers** | Executable or DLL of every service, unsigned drivers (rootkits), Safe Mode services (Crackonosh), RDP Wrapper |
+| **WMI** | Permanent subscriptions that run commands ("fileless" persistence) |
+| **Processes** | Processes disguised as system processes, look-alike names (svch0st), unusual parents, suspicious command lines, **unusual CPU usage (miners)** |
+| **Network** | Listening ports, connections to public IPs, ports of known RATs, hosts file, proxy, firewall, remote control software (AnyDesk, NetSupport...), SSH server |
+| **Browsers** | Extensions of Chrome, Edge, Brave, Opera, Vivaldi and Firefox: those flagged by the browser as malware, loaded from a folder or the command line, forced by a policy, not from a store or updated from a private server. Policies that hijack search, home page or proxy, or block the developer tools. Browser shortcuts and processes started with `--load-extension` or `--remote-debugging-port` (used by stealers to steal cookies). It reads only extension data, never history, cookies or passwords |
+| **App injections** | Code added to Discord, Discord Canary/PTB and Lightcord (the `index.js` file stealers change to steal the token at every start; BetterDiscord recognized) and to the Exodus and Atomic wallets (code changed after installation or with data exfiltration channels) |
+| **Accounts** | Unknown administrators, hidden accounts, Administrator/Guest enabled, Remote Desktop, WinRM |
+| **Certificates** | Added root certificates (HTTPS interception) |
+| **Suspicious files** | Unsigned executables, VBS/JS/HTA scripts, hidden files, random names and ADS streams in AppData, Temp, ProgramData, Public, Recycle Bin |
+| **Timeline** | Last 30 days from the Windows logs: services installed and then removed (7045), Defender turned off or given exclusions (5001, 5007), threats found and not removed (1116-1119), accounts created or made administrators (4720, 4732), suspicious PowerShell scripts (4104) and programs started from Downloads, Desktop or Temp (BAM key). The report has a section with the events in date order. |
 
-Ogni elemento riceve un **punteggio** in base a indizi combinati (firma digitale assente o
-manomessa, cartella scrivibile dall'utente, nome casuale, file nascosto, comandi offuscati,
-download da internet, LOLBins...) e quindi un livello: **Alto**, **Medio** (da verificare),
-**Basso**, **Info**. Ogni risultato riporta il motivo, la tecnica MITRE ATT&CK e cosa fare.
+Each item gets a **score** from combined clues (missing or tampered digital signature, folder
+writable by the user, random name, hidden file, obfuscated commands, downloaded from the
+internet, LOLBins...) and then a level: **High**, **Medium** (to review), **Low**, **Info**.
+Each result gives the reason, the MITRE ATT&CK technique and what to do.
 
-Per i dettagli su come si nascondono le backdoor e quale controllo corrisponde a quale
-tecnica, leggi [docs/COME-SI-NASCONDONO.md](docs/COME-SI-NASCONDONO.md).
+For details on how backdoors hide and which check matches which technique, read
+[docs/HOW-THEY-HIDE.md](docs/HOW-THEY-HIDE.md).
 
-## Come leggere il report
+## How to read the report
 
-- **Rosso (Alto)**: corrisponde a una tecnica tipica dei malware. Verifica subito.
-- **Arancione (Medio)**: spesso legittimo (molti programmi non sono firmati o vivono in
-  AppData), ma controlla di riconoscerlo.
-- **Blu (Basso) / Grigio (Info)**: per completezza.
+- **Red (High)**: matches a technique typical of malware. Check it right away.
+- **Orange (Medium)**: often legitimate (many programs are unsigned or live in AppData), but
+  make sure you recognize it.
+- **Grey (Low / Info)**: for completeness.
 
-Per ogni file sospetto c'è il link per cercarlo su VirusTotal tramite il suo SHA-256.
+For each suspicious file there is a link to look it up on VirusTotal by its SHA-256.
 
-Gli elementi che hai verificato e sono legittimi si nascondono aggiungendoli a
-`allowlist.local.json` (percorsi con `*`, hash SHA-256 o titoli). Crealo copiando
-`allowlist.json`: il file `.local` è escluso da git, così la tua lista personale non
-finisce mai nella repository, come la cartella `report\`.
+Items you have checked and found legitimate can be hidden by adding them to
+`allowlist.local.json` (paths with `*`, SHA-256 hashes or titles). Create it by copying
+`allowlist.json`: the `.local` file is excluded from git, so your personal list never ends up
+in the repository, just like the `report\` folder. Rules that are too broad (such as `*` or a
+whole `AppData` folder) are not applied and are flagged in the report, and everything the
+allowlist hides is still listed at the bottom of the report.
 
 ```json
 {
@@ -192,130 +189,134 @@ finisce mai nella repository, come la cartella `report\`.
 }
 ```
 
-## Se trovi qualcosa
+## If you find something
 
-1. Non cancellare subito: annota il percorso e verifica il file su virustotal.com.
-2. Se è confermato malevolo, scollega il PC da internet.
-3. Esegui **Microsoft Defender Offline** e un secondo scanner (Malwarebytes, ESET Online Scanner).
-4. Rimuovi prima le voci di avvio (attività, chiave Run, servizio), poi i file.
-5. Da un **altro dispositivo** cambia le password (email per prima) e attiva la verifica in due passaggi.
-6. Nel dubbio, reinstalla Windows: è l'unico modo per essere certi.
+1. Do not delete it right away: note the path and check the file on virustotal.com.
+2. If it is confirmed malicious, disconnect the PC from the internet.
+3. Run **Microsoft Defender Offline** and a second scanner (Malwarebytes, ESET Online Scanner).
+4. Remove the startup entries first (task, Run key, service), then the files.
+5. From **another device** change your passwords (email first) and turn on two-step verification.
+6. When in doubt, reinstall Windows: it is the only way to be sure.
 
-## Se l'antivirus blocca CheckBackdoor
+## If your antivirus blocks CheckBackdoor
 
-Per trovare un malware, CheckBackdoor legge gli stessi punti del sistema che legge un malware:
-le chiavi di avvio, le estensioni dei browser, i file di Discord e dei wallet. E i suoi file
-contengono le parole che cerca (comandi offuscati, parametri dei miner...). Alcuni antivirus,
-in particolare quelli con analisi del comportamento come Kaspersky, possono scambiarlo per una
-minaccia e mettere in quarantena `CheckBackdoor.ps1` o un modulo senza avvisare.
+To find malware, CheckBackdoor reads the same places of the system that malware reads: the
+startup keys, browser extensions, the files of Discord and of wallets. And its files contain
+the words it looks for (obfuscated commands, miner parameters...). Some antivirus products,
+especially those with behavior analysis such as Kaspersky, may mistake it for a threat and
+quarantine `CheckBackdoor.ps1` or a module without warning.
 
-Te ne accorgi perché `Avvia-Scansione.bat`, lo script o l'app ti dicono che manca un file.
+You notice it because `Start-Scan.bat`, the script or the app tell you a file is missing.
 
-1. **Ripristina il file dalla quarantena** dell'antivirus (in Kaspersky: *Rilevamenti* o
-   *Quarantena*), oppure scarica di nuovo il progetto. Con git basta `git checkout -- .`.
-2. **Aggiungi la cartella alle esclusioni** dell'antivirus. In Kaspersky: *Impostazioni*,
-   *Impostazioni di sicurezza*, *Minacce ed esclusioni*, *Gestisci esclusioni*, *Aggiungi*,
-   e scegli la cartella di CheckBackdoor. In Microsoft Defender: *Sicurezza di Windows*,
-   *Protezione da virus e minacce*, *Gestisci impostazioni*, *Esclusioni*.
-3. **Segnala il falso positivo** al produttore dell'antivirus, così migliora per tutti
-   (Kaspersky accetta file da analizzare su opentip.kaspersky.com).
+1. **Restore the file from the antivirus quarantine** (in Kaspersky: *Detections* or
+   *Quarantine*), or download the project again. With git, `git checkout -- .` is enough.
+2. **Add the folder to the antivirus exclusions.** In Kaspersky: *Settings*, *Security
+   settings*, *Threats and exclusions*, *Manage exclusions*, *Add*, and choose the CheckBackdoor
+   folder. In Microsoft Defender: *Windows Security*, *Virus & threat protection*, *Manage
+   settings*, *Exclusions*.
+3. **Report the false positive** to the antivirus vendor, so it improves for everyone
+   (Kaspersky accepts files for analysis at opentip.kaspersky.com).
 
-Prima di escludere la cartella, controlla di avere scaricato CheckBackdoor dalla sua
-repository: il codice è tutto leggibile, ed è il motivo per cui è scritto in PowerShell.
-Un'esclusione vale solo per quella cartella: non mettere lì altri file.
+Before excluding the folder, make sure you downloaded CheckBackdoor from its repository: all
+the code is readable, which is why it is written in PowerShell. An exclusion applies only to
+that folder: do not put other files there.
 
-## Limiti
+## Limits
 
-CheckBackdoor trova le **tracce** che una backdoor deve lasciare per sopravvivere e comunicare.
-Non vede un rootkit kernel già attivo (che può nascondersi al sistema operativo stesso), malware
-che vive solo in memoria o uno stealer che ha già rubato i dati e si è cancellato. Non sostituisce
-un antivirus: è un secondo parere mirato.
+CheckBackdoor finds the **traces** a backdoor must leave to survive and communicate. It cannot
+see a kernel rootkit that is already active (it can hide from the operating system itself),
+malware that lives only in memory, or a stealer that already stole the data and deleted itself.
+It does not replace an antivirus: it is a targeted second opinion.
 
-## Struttura
+## Layout
 
 ```
-CheckBackdoor.ps1        script principale
-Azioni.ps1               "Disattiva" con backup e "Annulla" (lo usa l'app)
-Avvia-Scansione.bat      avvio con doppio clic
-Controlla-File.bat       trascina qui un file per controllarlo prima di aprirlo
-allowlist.json           esempio di lista bianca (la tua va in allowlist.local.json)
+CheckBackdoor.ps1        main script
+Actions.ps1              "Disable" with a backup and "Undo" (used by the app)
+Start-Scan.bat           start with a double click
+Check-File.bat           drop a file here to check it before opening it
+allowlist.json           allowlist example (yours goes in allowlist.local.json)
 modules/
-  Common.ps1             punteggio di rischio, analisi file e righe di comando
-  Persistence.ps1        punti di avvio nel registro e cartelle Esecuzione automatica
-  AutorunExtra.ps1       punti di avvio meno noti (profili PowerShell, BITS, Office, Winsock...)
-  ScheduledTasks.ps1     attività pianificate
-  Services.ps1           servizi e driver
-  Wmi.ps1                sottoscrizioni WMI
-  Processes.ps1          processi e CPU
-  Network.ps1            rete, hosts, proxy, firewall, accesso remoto
-  Browser.ps1            estensioni, criteri e collegamenti dei browser
-  Injections.ps1         codice iniettato in Discord e nei wallet
-  FileCheck.ps1          controllo di un file prima di aprirlo (-File)
-  Security.ps1           Defender e difese di Windows
-  Accounts.ps1           account e Desktop remoto
-  Certificates.ps1       certificati radice
-  FileSystem.ps1         file sospetti
-  Timeline.ps1           linea temporale dai registri eventi e dalla chiave BAM
-  VirusTotal.ps1         verifica opzionale degli hash
-  Report.ps1             report HTML/JSON/CSV, confronto, lista bianca
-  Remedy.ps1             azioni sulle segnalazioni, con backup e annullamento
-app/CheckBackdoor.App/   app con interfaccia (.NET 10, WPF + WebView2)
-  ScanRunner.cs          avvia il motore e ne segue gli eventi
-  ActionRunner.cs        lancia Azioni.ps1 (come amministratore se serve) e la verifica programmata
-  Stores.cs              chiave VirusTotal (DPAPI), elementi ignorati, backup, impostazioni
-  ReportStore.cs         storico, riassunti e confronto tra due verifiche
-  MainWindow.xaml.cs     finestra, navigazione chiusa, ponte con l'interfaccia
-  ui/                    interfaccia in HTML/CSS/JS (fuori dall'app ha dati dimostrativi)
+  Common.ps1             findings, inventory, allowlist, file information
+  CommandRisk.ps1        command-line analysis and risk score
+  Persistence.ps1        startup locations in the registry and Startup folders
+  AutorunExtra.ps1       lesser-known startup locations (PowerShell profiles, BITS, Office, Winsock...)
+  ScheduledTasks.ps1     scheduled tasks
+  Services.ps1           services and drivers
+  Wmi.ps1                WMI subscriptions
+  Processes.ps1          processes and CPU
+  Network.ps1            network, hosts, proxy, firewall, remote access
+  Browser.ps1            browser extensions, policies and shortcuts
+  Injections.ps1         code injected into Discord and wallets
+  FileCheck.ps1          checking a file before opening it (-File)
+  Security.ps1           Defender and Windows defenses
+  Accounts.ps1           accounts and Remote Desktop
+  Certificates.ps1       root certificates
+  FileSystem.ps1         suspicious files
+  Timeline.ps1           timeline from the event logs and the BAM key
+  VirusTotal.ps1         optional hash lookup
+  Report.ps1             HTML/JSON/CSV report, comparison, allowlist
+  Remedy.ps1             actions on findings, with backup and undo
+app/CheckBackdoor.App/   app with an interface (.NET 10, WPF + WebView2)
+  ScanRunner.cs          starts the engine and follows its events
+  ActionRunner.cs        runs Actions.ps1 (as administrator when needed) and the scheduled scan
+  Stores.cs              VirusTotal key (DPAPI), ignored items, backups, settings
+  ReportStore.cs         history, summaries and comparison between two scans
+  MainWindow.xaml.cs     window, locked-down navigation, bridge to the interface
+  ui/                    HTML/CSS/JS interface (outside the app it shows demo data)
+installer/               Inno Setup script
+tools/                   release build and detection test in a VM
 docs/
-  COME-SI-NASCONDONO.md  tecniche di occultamento e fonti
-  EVENTI.md              formato degli eventi tra motore e app
-tests/                   test Pester (vedi "Sviluppo e test")
+  HOW-THEY-HIDE.md       hiding techniques and sources
+  EVENTS.md              event format between engine and app
+  VALIDATION.md          how to measure detections in a virtual machine
+tests/                   Pester tests (see "Development and tests")
 ```
 
-## Sviluppo e test
+## Development and tests
 
 ```powershell
-.\tools\Build-Release.ps1      # pacchetti di release in dist\ (test, app, installatore, impronte)
+.\tools\Build-Release.ps1      # release packages in dist\ (tests, app, installer, hashes)
 ```
 
-- **Prova dei rilevamenti in una macchina virtuale**: `tools\Prova-Rilevamenti.ps1` crea
-  persistenze *innocue* (voce Run, attività, servizio, WMI, esclusione di Defender... il cui
-  carico è un `Write-Output`), esegue la verifica, dice quali ha trovato e rimuove tutto.
-  Rifiuta di partire fuori da una VM. Vedi [docs/VALIDAZIONE.md](docs/VALIDAZIONE.md).
-- **Release**: un tag `v1.2.0` prepara su GitHub una release **in bozza** con installatore,
-  zip e impronte. Con i segreti `SIGNING_PFX_BASE64` e `SIGNING_PFX_PASSWORD` (un certificato
-  di firma del codice di un'autorità riconosciuta) firma exe, script e installatore.
+- **Detection test in a virtual machine**: `tools\Test-Detections.ps1` creates *harmless*
+  persistence (Run entry, task, service, WMI, Defender exclusion... whose payload is a
+  `Write-Output`), runs the scan, tells which ones it found and removes everything. It refuses
+  to start outside a VM. See [docs/VALIDATION.md](docs/VALIDATION.md).
+- **Release**: a `v1.2.0` tag prepares a **draft** release on GitHub with installer, zips and
+  hashes. With the `SIGNING_PFX_BASE64` and `SIGNING_PFX_PASSWORD` secrets (a code signing
+  certificate from a recognized authority) it signs the exe, scripts and installer.
 
-I test usano [Pester](https://pester.dev) 5 o successivo e girano anche su GitHub Actions a ogni
-modifica, con Windows PowerShell 5.1 (`.github/workflows/test.yml`).
+The tests use [Pester](https://pester.dev) 5 or later and also run on GitHub Actions at every
+change, with Windows PowerShell 5.1 (`.github/workflows/test.yml`).
 
 ```powershell
-Install-Module Pester -Scope CurrentUser -SkipPublisherCheck   # una volta sola
-.\tests\Invoke-Tests.ps1                    # tutti i test (circa un minuto)
-.\tests\Invoke-Tests.ps1 -ExcludeTag E2E    # senza le scansioni vere (pochi secondi)
+Install-Module Pester -Scope CurrentUser -SkipPublisherCheck   # once
+.\tests\Invoke-Tests.ps1                    # all tests (about a minute)
+.\tests\Invoke-Tests.ps1 -ExcludeTag E2E    # without the real scans (a few seconds)
 ```
 
-| File | Cosa verifica |
+| File | What it checks |
 |---|---|
-| `tests\Common.Tests.ps1` | Percorsi, punteggio di rischio, righe di comando sospette |
-| `tests\Report.Tests.ps1` | Accenti, HTML sicuro e offline (i nomi scelti da un attaccante restano testo), lista bianca, confronto tra scansioni |
-| `tests\Browser.Tests.ps1` | Estensioni su un profilo Chromium finto, parametri dei collegamenti |
-| `tests\FileCheck.Tests.ps1` | Analisi degli eseguibili su file costruiti al volo (doppia estensione, testo invertito, gonfiati, UPX, archivi, DLL sostituite) |
-| `tests\Timeline.Tests.ps1` | Linea temporale su eventi finti: servizi spariti, Defender, account, script PowerShell, chiave BAM |
-| `tests\AutorunExtra.Tests.ps1` | Cartella Esecuzione automatica spostata, profili PowerShell, uscita di bitsadmin, catalogo Winsock, XML delle attività |
-| `tests\Injections.Tests.ps1` | Discord pulito, iniettato e con BetterDiscord; wallet integro e manomesso |
-| `tests\Remedy.Tests.ps1` | Disattiva e Annulla su una chiave di prova in HKCU e su file di prova; azioni non ammesse rifiutate |
-| `tests\Static.Tests.ps1` | Sintassi, codifica ASCII dove serve, nessuna richiesta di rete fuori da VirusTotal, nessun dato personale nei file pubblicati |
-| `tests\EndToEnd.Tests.ps1` | Due scansioni vere con `powershell.exe`, report e confronto |
+| `tests\Common.Tests.ps1` | Paths, risk score, suspicious command lines, allowlist |
+| `tests\Report.Tests.ps1` | Safe offline HTML (names chosen by an attacker stay text), allowlist, comparison between scans |
+| `tests\Browser.Tests.ps1` | Extensions on a fake Chromium profile, shortcut parameters |
+| `tests\FileCheck.Tests.ps1` | Executable analysis on files built on the fly (double extension, reversed text, inflated, UPX, archives, replaced DLLs) |
+| `tests\Timeline.Tests.ps1` | Timeline on fake events: vanished services, Defender, accounts, PowerShell scripts, BAM key |
+| `tests\AutorunExtra.Tests.ps1` | Moved Startup folder, PowerShell profiles, bitsadmin output, Winsock catalog, task XML |
+| `tests\Injections.Tests.ps1` | Clean, injected and BetterDiscord Discord; intact and tampered wallets |
+| `tests\Remedy.Tests.ps1` | Disable and Undo on a test key in HKCU and on test files; disallowed actions rejected |
+| `tests\Static.Tests.ps1` | Syntax, ASCII encoding where needed, no network requests outside VirusTotal, no personal data in published files |
+| `tests\EndToEnd.Tests.ps1` | Real scans with `powershell.exe`, report and comparison |
 
-I campioni di comandi malevoli nei test sono innocui e composti a runtime: scritti per intero
-verrebbero bloccati da Microsoft Defender (AMSI) prima ancora di essere eseguiti.
+The malicious command samples in the tests are harmless and assembled at runtime: written out
+in full they would be blocked by Microsoft Defender (AMSI) before even running.
 
-Il piano di sviluppo è in [ROADMAP.md](ROADMAP.md).
+The development plan is in [ROADMAP.md](ROADMAP.md).
 
-### Perché PowerShell
+### Why PowerShell
 
-È integrato in Windows (nessuna dipendenza da installare, che sarebbe un'ulteriore superficie
-di attacco su un PC forse compromesso), ha accesso nativo a registro, WMI/CIM, firme Authenticode,
-Microsoft Defender, Utilità di pianificazione e stack di rete, e il codice è leggibile: puoi
-verificare tu stesso che lo scanner non faccia nulla di strano.
+It is built into Windows (no dependency to install, which would be one more attack surface on
+a possibly compromised PC), it has native access to the registry, WMI/CIM, Authenticode
+signatures, Microsoft Defender, Task Scheduler and the network stack, and the code is
+readable: you can check for yourself that the scanner does nothing strange.

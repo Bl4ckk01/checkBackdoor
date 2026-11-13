@@ -6,9 +6,9 @@ using System.Text.Json.Nodes;
 namespace CheckBackdoor.App;
 
 /// <summary>
-/// Chiave di VirusTotal cifrata con DPAPI (ambito utente corrente): solo lo stesso utente
-/// Windows sullo stesso PC puo' leggerla. Il motore la decifra da solo (Read-ProtectedSecret),
-/// cosi' non passa mai dalla riga di comando o dalle variabili d'ambiente.
+/// VirusTotal key encrypted with DPAPI (current user scope): only the same Windows user
+/// on the same PC can read it. The engine decrypts it by itself (Read-ProtectedSecret),
+/// so it never goes through the command line or environment variables.
 /// </summary>
 public static class Secrets
 {
@@ -16,7 +16,7 @@ public static class Secrets
 
     public static bool HasVirusTotalKey => File.Exists(AppPaths.VirusTotalKeyFile);
 
-    /// <summary>Le chiavi API di VirusTotal sono 64 cifre esadecimali.</summary>
+    /// <summary>VirusTotal API keys are 64 hexadecimal digits.</summary>
     public static bool IsValidVirusTotalKey(string? key) =>
         key is { Length: 64 } && key.All(Uri.IsHexDigit);
 
@@ -67,8 +67,8 @@ public static class Secrets
 }
 
 /// <summary>
-/// Elementi che l'utente ha scelto di ignorare. Il motore legge "ids" come lista bianca
-/// (-AllowlistFile); "items" serve all'app per mostrarli e ripristinarli.
+/// Items the user chose to ignore. The engine reads "ids" as an allowlist
+/// (-AllowlistFile); the app uses "items" to show and restore them.
 /// </summary>
 public static class IgnoreStore
 {
@@ -79,15 +79,15 @@ public static class IgnoreStore
     }
 
     /// <summary>
-    /// sha256: impronta del file al momento della scelta. Il motore smette di ignorare
-    /// l'elemento se il file cambia: "ignora" vale per quel file, non per quel percorso.
+    /// sha256: hash of the file at the time of the choice. The engine stops ignoring the
+    /// item if the file changes: "ignore" applies to that file, not to that path.
     /// </summary>
     public static void Add(string id, string? title, string? category, string? sha256)
     {
         var root = Load();
         var items = root["items"] as JsonArray ?? [];
         if (items.Any(i => (string?)i?["id"] == id)) return;
-        items.Add(new JsonObject { ["id"] = id, ["title"] = title, ["category"] = category, ["sha256"] = sha256, ["date"] = DateTime.Now.ToString("dd/MM/yyyy HH:mm") });
+        items.Add(new JsonObject { ["id"] = id, ["title"] = title, ["category"] = category, ["sha256"] = sha256, ["date"] = DateTime.Now.ToString("yyyy-MM-dd HH:mm") });
         Save(items);
     }
 
@@ -119,13 +119,13 @@ public static class IgnoreStore
     }
 }
 
-/// <summary>Le modifiche fatte con "Disattiva", lette dai file checkbackdoor.backup/1.</summary>
+/// <summary>The changes made with "Disable", read from the checkbackdoor.backup/1 files.</summary>
 public static class BackupStore
 {
     public static JsonArray List(int max = 50)
     {
         var list = new JsonArray();
-        // Due cartelle: quella dell'utente e quella protetta dei backup fatti come amministratore
+        // Two folders: the user's and the protected one for backups made as administrator
         var files = new[] { AppPaths.BackupDir, AppPaths.ProtectedBackupDir }
             .Where(Directory.Exists)
             .SelectMany(d => { try { return new DirectoryInfo(d).GetFiles("*.json"); } catch (Exception) { return Array.Empty<FileInfo>(); } });
@@ -148,19 +148,19 @@ public static class BackupStore
         return list;
     }
 
-    /// <summary>Vero se il file e' un backup di una delle due cartelle di CheckBackdoor.</summary>
+    /// <summary>True if the file is a backup in one of the two CheckBackdoor folders.</summary>
     public static bool IsBackupFile(string? file) =>
         AppPaths.IsInside(file, AppPaths.BackupDir) || AppPaths.IsInside(file, AppPaths.ProtectedBackupDir);
 
     /// <summary>
-    /// Se annullare richiede l'amministratore. Lo decide la cartella, non il contenuto del
-    /// file: solo i backup della cartella protetta si ripristinano con quei privilegi, perche'
-    /// quelli nel profilo dell'utente li puo' riscrivere qualsiasi programma.
+    /// Whether undoing needs the administrator. The folder decides, not the content of the
+    /// file: only backups in the protected folder are restored with those rights, because
+    /// any program can rewrite the ones in the user's profile.
     /// </summary>
     public static bool NeedsAdmin(string backupFile) => AppPaths.IsInside(backupFile, AppPaths.ProtectedBackupDir);
 }
 
-/// <summary>Impostazioni dell'app (per ora: il giorno della verifica programmata).</summary>
+/// <summary>App settings (for now: the day of the scheduled scan).</summary>
 public static class SettingsStore
 {
     public static JsonObject Load()

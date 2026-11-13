@@ -1,2 +1,2 @@
-// I progetti WPF escludono System.IO dagli using automatici (conflitti con System.Windows)
+// WPF projects leave System.IO out of the implicit usings (conflicts with System.Windows)
 global using System.IO;

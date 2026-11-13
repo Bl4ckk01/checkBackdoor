@@ -1,56 +1,56 @@
-# Sicurezza
+# Security
 
-## Scaricare CheckBackdoor in modo sicuro
+## Downloading CheckBackdoor safely
 
-Uno strumento che si esegue come amministratore è un bersaglio ideale per copie modificate.
+A tool that runs as administrator is an ideal target for modified copies.
 
-- Scaricalo solo da questa repository GitHub, mai da siti, video o messaggi che lo ripropongono.
-- Prima di eseguirlo, confronta l'impronta SHA-256 dell'archivio con quella pubblicata nella
-  pagina della release:
+- Download it only from this GitHub repository, never from sites, videos or messages that
+  repost it.
+- Before running it, compare the SHA-256 hash of the archive with the one published on the
+  release page:
   ```powershell
   Get-FileHash .\CheckBackdoor.zip -Algorithm SHA256
   ```
-- Il codice è PowerShell leggibile: puoi aprire `CheckBackdoor.ps1` e la cartella `modules\`
-  e verificare che non scarichi né invii nulla. L'unica connessione possibile è verso VirusTotal,
-  e solo se fornisci tu una chiave API (`-VirusTotalApiKey`).
+- The code is readable PowerShell: you can open `CheckBackdoor.ps1` and the `modules\` folder
+  and check that it downloads and sends nothing. The only possible connection is to VirusTotal,
+  and only if you provide an API key yourself (`-VirusTotalApiKey`).
 
-## Dove tenerlo
+## Where to keep it
 
-Quando chiede i privilegi di amministratore, CheckBackdoor esegue i propri file con quei
-privilegi. Se stanno in una cartella che qualsiasi programma può modificare (Download,
-Desktop, AppData), un malware già presente sul PC può riscriverli e ottenere i privilegi alla
-prossima verifica.
+When it asks for administrator rights, CheckBackdoor runs its own files with those rights. If
+they are in a folder any program can change (Downloads, Desktop, AppData), malware already on
+the PC can rewrite them and get those rights at the next scan.
 
-- L'installatore mette il programma in `Program Files`, che solo gli amministratori possono
-  modificare: è il modo consigliato.
-- Se usi lo zip o gli script, estraili in una cartella protetta allo stesso modo, oppure
-  esegui la verifica senza privilegi (`-NoElevate`): sarà meno completa, ma nessun file
-  modificabile verrà eseguito come amministratore.
-- Le release hanno un'attestazione di provenienza. Per verificare un file scaricato:
+- The installer puts the program in `Program Files`, which only administrators can change:
+  this is the recommended way.
+- If you use the zip or the scripts, extract them to a folder protected the same way, or run
+  the scan without elevation (`-NoElevate`): it will be less complete, but no changeable file
+  will run as administrator.
+- Releases have a provenance attestation. To verify a downloaded file:
   ```powershell
-  gh attestation verify .\CheckBackdoor-<versione>-setup.exe --repo <proprietario>/<repository>
+  gh attestation verify .\CheckBackdoor-<version>-setup.exe --repo <owner>/<repository>
   ```
 
-## Cosa non si fida di cosa
+## What does not trust what
 
-- **Lista bianca.** `allowlist.local.json` e gli elementi ignorati dall'app sono file
-  dell'utente: un malware può scriverci. Le regole troppo ampie non vengono applicate e
-  compaiono tra le segnalazioni, e il report elenca sempre ciò che è stato nascosto.
-- **"Disattiva" e "Annulla".** Agiscono solo su chiavi di avvio, cartelle Esecuzione
-  automatica, attività non di Windows e servizi non di Microsoft né dell'antivirus. Come
-  amministratore i backup si scrivono e si leggono solo in `%ProgramData%\CheckBackdoor\backup`.
-- **Report.** I nomi di file e i comandi che contiene li sceglie chi ha scritto il malware:
-  sono sempre mostrati come testo, e una Content-Security-Policy blocca ogni altro script.
+- **Allowlist.** `allowlist.local.json` and the items ignored from the app are user files:
+  malware can write to them. Rules that are too broad are not applied and show up among the
+  findings, and the report always lists what was hidden.
+- **"Disable" and "Undo".** They act only on startup keys, Startup folders, non-Windows tasks
+  and services that belong neither to Microsoft nor to the antivirus. As administrator,
+  backups are written and read only in `%ProgramData%\CheckBackdoor\backup`.
+- **Report.** The file names and commands it contains are chosen by whoever wrote the malware:
+  they are always shown as text, and a Content-Security-Policy blocks any other script.
 
-## Segnalare una vulnerabilità
+## Reporting a vulnerability
 
-Se trovi un problema di sicurezza nello scanner, segnalalo in privato con la funzione
-"Report a vulnerability" della scheda **Security** di GitHub, non con una issue pubblica.
-Ad esempio: un report che esegue codice all'apertura, un percorso che fa leggere o modificare
-file a chi non dovrebbe, o un modo per nascondere una persistenza ai controlli.
+If you find a security problem in the scanner, report it privately with the "Report a
+vulnerability" feature of the GitHub **Security** tab, not with a public issue. For example: a
+report that runs code when opened, a path that lets someone read or change files they should
+not, or a way to hide persistence from the checks.
 
-## Falsi negativi e falsi positivi
+## False negatives and false positives
 
-Un elemento malevolo non rilevato o un programma legittimo segnalato non sono vulnerabilità:
-apri una normale issue, senza allegare il report completo. Il report contiene dati del tuo PC
-(nomi utente, percorsi, programmi installati): copia solo la segnalazione interessata.
+A malicious item that was not detected or a legitimate program that was flagged are not
+vulnerabilities: open a normal issue, without attaching the full report. The report contains
+data about your PC (user names, paths, installed programs): copy only the finding concerned.

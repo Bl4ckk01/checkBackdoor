@@ -1,60 +1,61 @@
-# Novità
+# Changelog
 
-Il formato segue [Keep a Changelog](https://keepachangelog.com/it/1.1.0/). Le versioni di
-motore e app coincidono.
+The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Engine and app
+versions are the same.
 
-## Non ancora rilasciato
+## Unreleased
 
-### Sicurezza
-- **Installazione in Program Files** (serve l'amministratore): il motore viene eseguito come
-  amministratore, quindi non deve stare in una cartella che un programma dell'utente può
-  modificare. PowerShell viene avviato con il percorso completo.
-- **Backup protetti**: le modifiche fatte come amministratore salvano il backup in
-  `%ProgramData%\CheckBackdoor\backup`, scrivibile solo dagli amministratori, e "Annulla" con
-  quei privilegi ripristina solo i backup di quella cartella. Un file spostato torna al suo
-  posto solo se la sua impronta SHA-256 è quella salvata.
-- **"Disattiva"** mostra l'elemento che verrà davvero modificato, non tocca i servizi
-  dell'antivirus installato e rifiuta una richiesta cambiata dopo la conferma (`-RequestSha256`).
-- **Lista bianca**: le regole troppo ampie (`*`, `*.exe`, intere cartelle utente o di sistema)
-  non vengono applicate e sono segnalate; un elemento ignorato dall'app torna visibile se il
-  file cambia; il report elenca tutto ciò che la lista bianca ha nascosto, con la regola.
-- **Content-Security-Policy** nel report e nell'interfaccia: girano solo gli script di
-  CheckBackdoor.
-- **Release**: action di GitHub fissate al commit e attestazione di provenienza dei file.
+### Changed
+- **Everything is in English**: interface, report, messages, code, comments and docs. File
+  names changed accordingly: `Start-Scan.bat`, `Check-File.bat`, `Actions.ps1`,
+  `tools\Test-Detections.ps1`, reports `scan_*` and `check_*`, app data `ignored.json` and
+  `settings.json`, scheduled task `\CheckBackdoor\Weekly scan`. Severities are `High`,
+  `Medium`, `Low` and `Info`. Reports from earlier versions are not shown in the app history.
+- Command-line analysis moved from `Common.ps1` to its own module, `CommandRisk.ps1`.
+
+### Security
+- **Install to Program Files** (administrator needed): the engine runs as administrator, so it
+  must not live in a folder a user program can change. PowerShell is started by its full path.
+- **Protected backups**: changes made as administrator save their backup in
+  `%ProgramData%\CheckBackdoor\backup`, writable only by administrators, and "Undo" with those
+  rights restores only backups from that folder. A moved file goes back only if its SHA-256
+  hash is the one saved.
+- **"Disable"** shows the item that will really be changed, does not touch the services of the
+  installed antivirus and rejects a request changed after the confirmation (`-RequestSha256`).
+- **Allowlist**: rules that are too broad (`*`, `*.exe`, whole user or system folders) are not
+  applied and are flagged; an item ignored from the app shows up again if the file changes; the
+  report lists everything the allowlist hid, with the rule.
+- **Content-Security-Policy** in the report and the interface: only CheckBackdoor scripts run.
+- **Release**: GitHub actions pinned to a commit and provenance attestation of the files.
 
 ## 1.2.0
 
-### Aggiunto
-- **Linea temporale** degli ultimi 30 giorni dai registri di Windows: servizi installati e poi
-  rimossi, Defender spento o con nuove esclusioni, minacce trovate, account creati o resi
-  amministratori, script PowerShell sospetti, programmi avviati da Download e Temp.
-- **Punti di avvio meno noti**: cartella Esecuzione automatica spostata, profili PowerShell,
-  processi BITS con un comando, AppCertDlls, database di compatibilità, componenti aggiuntivi e
-  chiave "Office test", provider Winsock, attività presenti solo come file XML.
-- **App**: storico e confronto tra verifiche (nuove, sparite, comparse, modificate, rimosse);
-  impostazioni con chiave di VirusTotal cifrata (DPAPI), verifica programmata settimanale,
-  elementi ignorati; azioni su ogni segnalazione: mostra il file, ignora, **disattiva** con
-  backup e **Annulla** (`Azioni.ps1`).
-- Messaggi chiari quando l'antivirus mette in quarantena un file di CheckBackdoor (codice di
-  uscita 4) e una sezione del README su come ripristinarlo.
-- Installatore per l'utente, app portatile, pacchetto dello script, impronte SHA-256 e firma
-  facoltativa (`tools\Build-Release.ps1`); release in bozza da GitHub Actions.
-- `tools\Prova-Rilevamenti.ps1` per misurare i rilevamenti in una macchina virtuale.
-- README in inglese.
+### Added
+- **Timeline** of the last 30 days from the Windows logs: services installed and then removed,
+  Defender turned off or given new exclusions, threats found, accounts created or made
+  administrators, suspicious PowerShell scripts, programs started from Downloads and Temp.
+- **Lesser-known startup locations**: moved Startup folder, PowerShell profiles, BITS jobs with
+  a command, AppCertDlls, compatibility databases, Office add-ins and the "Office test" key,
+  Winsock providers, tasks present only as XML files.
+- **App**: history and comparison between scans (new, gone, added, changed, removed); settings
+  with an encrypted VirusTotal key (DPAPI), weekly scheduled scan, ignored items; actions on
+  each finding: show the file, ignore, **disable** with a backup and **Undo**.
+- Clear messages when the antivirus quarantines a CheckBackdoor file (exit code 4) and a README
+  section on how to restore it.
+- Installer, portable app, script package, SHA-256 hashes and optional signing
+  (`tools\Build-Release.ps1`); draft release from GitHub Actions.
+- A tool to measure detections in a virtual machine.
 
-### Cambiato
-- I servizi firmati che si reinstallano a ogni avvio (VPN, anti-cheat) non riempiono più la
-  linea temporale.
-- I database di compatibilità installati in AppPatch sono "basso rischio" (IIS Express ne
-  installa due).
+### Changed
+- Signed services that reinstall at every boot (VPN, anti-cheat) no longer fill the timeline.
+- Compatibility databases installed in AppPatch are "low risk" (IIS Express installs two).
 
 ## 1.1.0
 
-### Aggiunto
-- Report HTML ridisegnato ("Verifica integrità"), offline, con tema chiaro e scuro.
-- Controllo delle estensioni dei browser e delle iniezioni in Discord e nei wallet.
-- Controllo di un file prima di aprirlo (`-File`, `Controlla-File.bat`).
-- Eventi strutturati della scansione (`-EventsFile`, [docs/EVENTI.md](docs/EVENTI.md)) e
-  annullamento.
-- Prima versione dell'app con interfaccia (WPF + WebView2).
-- Test Pester, controlli di privacy e GitHub Actions.
+### Added
+- Redesigned HTML report, offline, with light and dark themes.
+- Checks of browser extensions and of injections into Discord and wallets.
+- Checking a file before opening it (`-File`).
+- Structured scan events (`-EventsFile`, [docs/EVENTS.md](docs/EVENTS.md)) and cancelling.
+- First version of the app with an interface (WPF + WebView2).
+- Pester tests, privacy checks and GitHub Actions.

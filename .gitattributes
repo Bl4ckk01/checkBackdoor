@@ -1,4 +1,4 @@
-# Script e file batch per Windows: sempre con a capo CRLF, anche se clonati altrove
+# Windows scripts and batch files: always CRLF line endings, even when cloned elsewhere
 * text=auto
 *.bat text eol=crlf
 *.cmd text eol=crlf

@@ -1,17 +1,17 @@
-# Linea temporale: cosa e' successo negli ultimi 30 giorni secondo i registri di Windows.
-# Una backdoor puo' cancellare i propri file, ma le tracce dell'installazione restano:
-# servizi registrati (7045), Defender spento o con esclusioni (5001, 5007), minacce
-# trovate (1116-1119), account creati (4720, 4732), script PowerShell sospetti (4104)
-# e programmi avviati (chiave BAM).
+# Timeline: what happened in the last 30 days according to the Windows logs.
+# A backdoor can delete its own files, but the traces of the installation remain:
+# registered services (7045), Defender turned off or given exclusions (5001, 5007),
+# threats found (1116-1119), accounts created (4720, 4732), suspicious PowerShell scripts
+# (4104) and programs started (BAM key).
 #
-# Ogni lettore restituisce oggetti semplici { Time, Id, Data }: le funzioni Test-* li
-# valutano e si possono provare con eventi finti.
+# Each reader returns simple { Time, Id, Data } objects: the Test-* functions evaluate
+# them and can be tested with fake events.
 
 $script:Timeline = New-Object System.Collections.Generic.List[object]
 $script:TimelineExamined = 0
 $script:TimelineRan = $false
 $script:TimelineDays = 30
-$script:TimelineCategory = 'Linea temporale'
+$script:TimelineCategory = 'Timeline'
 
 function Add-TimelineEntry {
     param([datetime]$Time, [string]$Source, [string]$Text, [string]$Path, [string]$Severity = 'Info', [string]$FindingId)
@@ -20,7 +20,7 @@ function Add-TimelineEntry {
         })
 }
 
-# Registra la segnalazione e la voce della linea temporale collegata.
+# Records the finding and the timeline entry linked to it.
 function Add-TimelineFinding {
     param([datetime]$Time, [string]$Source, [string]$Severity, [string]$Title, [string]$Text, [string]$Path, [string]$Evidence,
         [string]$Detail, [string]$Mitre, [string[]]$Reasons, [string]$Recommendation)
@@ -46,9 +46,9 @@ function Read-WinEvents {
     }
 }
 
-function Format-TimelineDate([datetime]$Time) { $Time.ToString('dd/MM/yyyy HH:mm') }
+function Format-TimelineDate([datetime]$Time) { $Time.ToString('yyyy-MM-dd HH:mm') }
 
-# --- Servizi installati (7045) ----------------------------------------------------
+# --- Installed services (7045) ------------------------------------------------------
 function Test-ServiceExists([string]$Name) {
     $k = [Microsoft.Win32.Registry]::LocalMachine.OpenSubKey("SYSTEM\CurrentControlSet\Services\$Name")
     if ($k) { $k.Close(); return $true }
@@ -57,39 +57,39 @@ function Test-ServiceExists([string]$Name) {
 
 function Test-ServiceInstallEvents {
     param($Events)
-    # Driver di VPN e anti-cheat si reinstallano a ogni avvio: una voce per servizio e
-    # comando, con l'ultima data e il numero di volte.
+    # VPN and anti-cheat drivers reinstall themselves at every start: one entry per service
+    # and command, with the latest date and the number of times.
     $groups = @(@($Events) | Where-Object { $_.Data['ServiceName'] } |
             Group-Object { "$($_.Data['ServiceName'])|$($_.Data['ImagePath'])".ToLowerInvariant() })
     foreach ($g in $groups) {
         $ev = @($g.Group | Sort-Object Time)[-1]
         $name = $ev.Data['ServiceName']; $image = $ev.Data['ImagePath']
         $exists = Test-ServiceExists $name
-        $text = "Installato il servizio $name"
-        if ($g.Count -gt 1) { $text += " ($($g.Count) volte)" }
-        if (-not $exists) { $text += ", poi rimosso" }
+        $text = "Service $name installed"
+        if ($g.Count -gt 1) { $text += " ($($g.Count) times)" }
+        if (-not $exists) { $text += ', then removed' }
         $risk = Get-CommandRisk $image
         $sev = ConvertTo-Severity $risk.Score
-        # Un servizio ancora presente lo valuta gia' il controllo dei servizi; qui interessa
-        # quello rimosso con un comando sospetto: tipico degli strumenti che si cancellano.
-        if (-not $exists -and $sev -in 'Alto', 'Medio') {
-            Add-TimelineFinding -Time $ev.Time -Source 'Servizi' -Severity $sev -Title "Servizio installato e poi rimosso: $name" `
-                -Text $text -Path $risk.Target -Evidence $image -Detail "Registro eventi di sistema, evento 7045 del $(Format-TimelineDate $ev.Time)" `
-                -Mitre 'T1543.003' -Reasons (@("Il servizio non esiste piu': e' stato installato, ha eseguito il comando ed e' stato rimosso") + @($risk.Reasons)) `
-                -Recommendation "Un servizio che compare e sparisce con un comando del genere e' tipico degli strumenti di accesso remoto. Esegui Microsoft Defender Offline e controlla gli altri eventi della stessa data."
+        # A service that still exists is already evaluated by the services check; what matters
+        # here is one removed after running a suspicious command: typical of self-deleting tools.
+        if (-not $exists -and $sev -in 'High', 'Medium') {
+            Add-TimelineFinding -Time $ev.Time -Source 'Services' -Severity $sev -Title "Service installed and then removed: $name" `
+                -Text $text -Path $risk.Target -Evidence $image -Detail "System event log, event 7045 of $(Format-TimelineDate $ev.Time)" `
+                -Mitre 'T1543.003' -Reasons (@('The service no longer exists: it was installed, ran the command and was removed') + @($risk.Reasons)) `
+                -Recommendation 'A service that appears and disappears with a command like this is typical of remote-access tools. Run Microsoft Defender Offline and check the other events of the same day.'
         } else {
-            $tlSev = if ($sev -in 'Alto', 'Medio') { $sev } else { 'Info' }
-            # Aggiornamenti di driver e servizi firmati (VPN, antivirus, anti-cheat): rumore
+            $tlSev = if ($sev -in 'High', 'Medium') { $sev } else { 'Info' }
+            # Updates of signed drivers and services (VPN, antivirus, anti-cheat): noise
             if ($tlSev -eq 'Info' -and $risk.Target -and [IO.Path]::IsPathRooted($risk.Target)) {
                 $info = Get-FileInfo $risk.Target
                 if ($info.Exists -and $info.SignatureStatus -eq 'Valid') { continue }
             }
-            Add-TimelineEntry -Time $ev.Time -Source 'Servizi' -Text $text -Path $risk.Target -Severity $tlSev
+            Add-TimelineEntry -Time $ev.Time -Source 'Services' -Text $text -Path $risk.Target -Severity $tlSev
         }
     }
 }
 
-# --- Microsoft Defender (5001, 5007, 1116-1119) -----------------------------------
+# --- Microsoft Defender (5001, 5007, 1116-1119) ------------------------------------
 function Get-DefenderThreatPath([string]$Raw) {
     if (-not $Raw) { return $null }
     $first = ($Raw -split ';')[0]
@@ -100,27 +100,27 @@ function Test-DefenderEvents {
     param($Events)
     $events = @($Events | Sort-Object Time)
     $off = @($events | Where-Object { $_.Id -in 5001, 5010, 5012 })
-    foreach ($ev in $off) { Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text 'Protezione di Defender disattivata' -Severity 'Medio' }
+    foreach ($ev in $off) { Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text 'Defender protection turned off' -Severity 'Medium' }
     if ($off) {
         $last = $off[-1].Time
         $n = $off.Count
-        Add-Finding -Category $script:TimelineCategory -Severity 'Medio' -Title 'Protezione di Defender disattivata di recente' `
-            -Detail "$n volte negli ultimi $script:TimelineDays giorni, l'ultima il $(Format-TimelineDate $last) (eventi 5001, 5010, 5012)" `
-            -Mitre 'T1562.001' -Reasons "Molti crack chiedono di spegnere l'antivirus: in quel momento qualsiasi cosa installata passa senza controlli" `
-            -Recommendation "Se non sei stato tu, o se l'hai spenta per installare un crack, esegui Microsoft Defender Offline e controlla cosa e' stato installato in quei giorni."
+        Add-Finding -Category $script:TimelineCategory -Severity 'Medium' -Title 'Defender protection turned off recently' `
+            -Detail "$n times in the last $script:TimelineDays days, the last on $(Format-TimelineDate $last) (events 5001, 5010, 5012)" `
+            -Mitre 'T1562.001' -Reasons 'Many cracks ask you to turn the antivirus off: while it is off, anything installed goes through unchecked' `
+            -Recommendation 'If it was not you, or you turned it off to install a crack, run Microsoft Defender Offline and check what was installed on those days.'
     }
 
     foreach ($ev in @($events | Where-Object Id -eq 5007)) {
         $new = $ev.Data['New Value']; $old = $ev.Data['Old Value']
         if ($new -match '(?i)\\Exclusions\\(Paths|Extensions|Processes|IpAddresses)\\(.+?)\s*=' -and -not $old) {
-            $kind = @{ Paths = 'cartella o file'; Extensions = 'estensione'; Processes = 'programma'; IpAddresses = 'indirizzo IP' }[$Matches[1]]
-            Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text "Aggiunta un'esclusione a Defender ($kind)" -Path $Matches[2] -Severity 'Medio'
+            $kind = @{ Paths = 'folder or file'; Extensions = 'extension'; Processes = 'program'; IpAddresses = 'IP address' }[$Matches[1]]
+            Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text "Defender exclusion added ($kind)" -Path $Matches[2] -Severity 'Medium'
         } elseif ($new -match '(?i)\\(DisableRealtimeMonitoring|DisableAntiSpyware|DisableBehaviorMonitoring|DisableIOAVProtection)\s*=\s*0x1') {
-            Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text "Impostazione di Defender cambiata: $($Matches[1])" -Severity 'Medio'
+            Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text "Defender setting changed: $($Matches[1])" -Severity 'Medium'
         }
     }
 
-    # Minacce: una segnalazione per minaccia e file, con l'esito peggiore
+    # Threats: one finding per threat and file, with the worst outcome
     $threats = [ordered]@{}
     foreach ($ev in @($events | Where-Object { $_.Id -in 1116, 1117, 1118, 1119 })) {
         $name = $ev.Data['Threat Name']; if (-not $name) { continue }
@@ -130,23 +130,23 @@ function Test-DefenderEvents {
         $t = $threats[$key]
         if ($ev.Id -in 1118, 1119) { $t.Failed = $true }
         if ($ev.Id -eq 1117 -and $ev.Data['Action Name']) { $t.Action = $ev.Data['Action Name'] }
-        $what = @{ 1116 = 'Defender ha trovato'; 1117 = 'Defender ha bloccato'; 1118 = "Defender non e' riuscito a bloccare"; 1119 = "Defender non e' riuscito a bloccare" }[$ev.Id]
-        Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text "$what $name" -Path $path -Severity $(if ($ev.Id -in 1118, 1119) { 'Alto' } else { 'Basso' })
+        $what = @{ 1116 = 'Defender found'; 1117 = 'Defender blocked'; 1118 = 'Defender failed to block'; 1119 = 'Defender failed to block' }[$ev.Id]
+        Add-TimelineEntry -Time $ev.Time -Source 'Defender' -Text "$what $name" -Path $path -Severity $(if ($ev.Id -in 1118, 1119) { 'High' } else { 'Low' })
     }
     foreach ($t in $threats.Values) {
         $stillThere = $t.Path -and [IO.Path]::IsPathRooted($t.Path) -and (Test-Path -LiteralPath $t.Path -PathType Leaf)
-        $reasons = @("Rilevata il $(Format-TimelineDate $t.First)")
-        if ($t.Action) { $reasons += "Azione di Defender: $($t.Action)" }
-        if ($t.Failed) { $sev = 'Alto'; $reasons += "Defender non e' riuscito a rimuoverla" }
-        elseif ($stillThere) { $sev = 'Medio'; $reasons += "Il file rilevato esiste ancora" }
-        else { $sev = 'Basso'; $reasons += "Il file non c'e' piu': Defender l'ha rimosso o messo in quarantena" }
-        Add-Finding -Category $script:TimelineCategory -Severity $sev -Title "Minaccia trovata da Defender: $($t.Name)" -Path $t.Path `
+        $reasons = @("Detected on $(Format-TimelineDate $t.First)")
+        if ($t.Action) { $reasons += "Defender action: $($t.Action)" }
+        if ($t.Failed) { $sev = 'High'; $reasons += 'Defender failed to remove it' }
+        elseif ($stillThere) { $sev = 'Medium'; $reasons += 'The detected file still exists' }
+        else { $sev = 'Low'; $reasons += 'The file is gone: Defender removed or quarantined it' }
+        Add-Finding -Category $script:TimelineCategory -Severity $sev -Title "Threat found by Defender: $($t.Name)" -Path $t.Path `
             -Mitre 'T1204.002' -Reasons $reasons `
-            -Recommendation "Apri Sicurezza di Windows, Protezione da virus e minacce, Cronologia protezione: verifica che la minaccia sia stata rimossa. Se veniva da un crack, considera compromesso tutto cio' che e' stato installato insieme."
+            -Recommendation 'Open Windows Security, Virus & threat protection, Protection history: check that the threat was removed. If it came from a crack, consider everything installed with it compromised.'
     }
 }
 
-# --- Account (4720, 4732) ---------------------------------------------------------
+# --- Accounts (4720, 4732) -------------------------------------------------------------
 function Resolve-SidName([string]$Sid) {
     if (-not $Sid) { return $null }
     try { return (New-Object Security.Principal.SecurityIdentifier($Sid)).Translate([Security.Principal.NTAccount]).Value } catch { return $Sid }
@@ -158,33 +158,33 @@ function Test-AccountEvents {
         $by = $ev.Data['SubjectUserName']
         if ($ev.Id -eq 4720) {
             $name = $ev.Data['TargetUserName']
-            Add-TimelineFinding -Time $ev.Time -Source 'Account' -Severity 'Medio' -Title "Account creato: $name" `
-                -Text "Creato l'account $name" -Evidence "Creato da $by il $(Format-TimelineDate $ev.Time)" -Detail 'Registro eventi di sicurezza, evento 4720' `
-                -Mitre 'T1136.001' -Reasons 'Una backdoor puo'' creare un account per rientrare nel PC anche se viene rimossa' `
-                -Recommendation "Se non hai creato tu questo account, disattivalo da Gestione computer, Utenti e gruppi locali, e cambia la password del tuo."
+            Add-TimelineFinding -Time $ev.Time -Source 'Accounts' -Severity 'Medium' -Title "Account created: $name" `
+                -Text "Account $name created" -Evidence "Created by $by on $(Format-TimelineDate $ev.Time)" -Detail 'Security event log, event 4720' `
+                -Mitre 'T1136.001' -Reasons 'A backdoor can create an account to get back into the PC even after it is removed' `
+                -Recommendation 'If you did not create this account, disable it from Computer Management, Local Users and Groups, and change your own password.'
         } elseif ($ev.Id -eq 4732 -and $ev.Data['TargetSid'] -eq 'S-1-5-32-544') {
             $member = $ev.Data['MemberName']
             if (-not $member -or $member -eq '-') { $member = Resolve-SidName $ev.Data['MemberSid'] }
-            Add-TimelineFinding -Time $ev.Time -Source 'Account' -Severity 'Medio' -Title "Aggiunto agli amministratori: $member" `
-                -Text "$member aggiunto agli amministratori" -Evidence "Aggiunto da $by il $(Format-TimelineDate $ev.Time)" -Detail 'Registro eventi di sicurezza, evento 4732' `
-                -Mitre 'T1098' -Reasons 'Un account amministratore in piu'' da'' pieno controllo del PC a chi lo conosce' `
-                -Recommendation "Se non sei stato tu, togli l'account dal gruppo Administrators e cambia le password."
+            Add-TimelineFinding -Time $ev.Time -Source 'Accounts' -Severity 'Medium' -Title "Added to administrators: $member" `
+                -Text "$member added to administrators" -Evidence "Added by $by on $(Format-TimelineDate $ev.Time)" -Detail 'Security event log, event 4732' `
+                -Mitre 'T1098' -Reasons 'One more administrator account gives full control of the PC to whoever knows it' `
+                -Recommendation 'If it was not you, remove the account from the Administrators group and change your passwords.'
         }
     }
 }
 
-# --- Script PowerShell sospetti (4104, livello Avviso) -------------------------------
-# Windows registra da solo, anche senza configurazione, gli script con parole chiave
-# sospette. Si escludono quelli di CheckBackdoor, che contiene quelle parole per cercarle.
+# --- Suspicious PowerShell scripts (4104, Warning level) ---------------------------------
+# Windows logs scripts with suspicious keywords on its own, even with no configuration.
+# CheckBackdoor's own scripts are excluded: they contain those words in order to look for them.
 $script:ScriptExtraPatterns = @(
-    @{ Rx = '(?i)(amsiutils|amsiinitfailed|amsiscanbuffer)'; S = 60; R = 'Tenta di disattivare AMSI, la protezione che fa leggere gli script all''antivirus'; Hard = $true }
-    @{ Rx = '(?i)\[(system\.)?reflection\.assembly\]::load'; S = 30; R = 'Carica un programma direttamente in memoria, senza file'; Hard = $false }
-    @{ Rx = '(?i)virtualalloc|createremotethread|writeprocessmemory'; S = 40; R = 'Usa funzioni di Windows per iniettare codice in altri processi'; Hard = $true }
+    @{ Rx = '(?i)(amsiutils|amsiinitfailed|amsiscanbuffer)'; S = 60; R = 'Tries to turn off AMSI, the protection that lets the antivirus read scripts'; Hard = $true }
+    @{ Rx = '(?i)\[(system\.)?reflection\.assembly\]::load'; S = 30; R = 'Loads a program straight into memory, without a file'; Hard = $false }
+    @{ Rx = '(?i)virtualalloc|createremotethread|writeprocessmemory'; S = 40; R = 'Uses Windows functions to inject code into other processes'; Hard = $true }
 )
 
 function Get-OwnScriptText {
     if (-not $script:OwnScriptText) {
-        # Cartella del motore, impostata da CheckBackdoor.ps1 prima di caricare i moduli
+        # Engine folder, set by CheckBackdoor.ps1 before loading the modules
         $root = $script:EngineRoot
         $sb = New-Object System.Text.StringBuilder
         if ($root) {
@@ -211,9 +211,9 @@ function Get-ScriptBlockRisk {
         if ($Text -match $p.Rx) { $score += $p.S; $reasons.Add($p.R); if ($p.Hard) { $hard = $true } }
     }
     $sev = ConvertTo-Severity $score
-    # Scaricare ed eseguire e' anche il modo in cui si installano molti strumenti legittimi
-    # (winget, Chocolatey, Scoop): resta "da verificare" se manca un segnale piu' forte.
-    if ($sev -eq 'Alto' -and -not $hard) { $sev = 'Medio' }
+    # Download-and-run is also how many legitimate tools install themselves (winget,
+    # Chocolatey, Scoop): it stays "to review" unless there is a stronger signal.
+    if ($sev -eq 'High' -and -not $hard) { $sev = 'Medium' }
     return [pscustomobject]@{ Score = $score; Severity = $sev; Reasons = $reasons.ToArray() }
 }
 
@@ -226,8 +226,8 @@ function Test-PowerShellEvents {
         if (-not $text) { continue }
         $trim = $text.Trim()
         if ($OwnText -and $trim.Length -gt 0 -and $OwnText.IndexOf($trim, [StringComparison]::Ordinal) -ge 0) { continue }
-        # Moduli generati da Windows per i cmdlet CIM (es. Get-MpPreference di Defender)
-        # e script in C:\Windows: li usa il sistema, non chi ha installato qualcosa.
+        # Modules Windows generates for CIM cmdlets (e.g. Defender's Get-MpPreference) and
+        # scripts in C:\Windows: used by the system, not by whoever installed something.
         if ($trim -match "(?s)^#requires -version 3\.0.*\`$script:ClassName = 'root[\\/]") { continue }
         if ($ev.Data['Path'] -and $ev.Data['Path'].StartsWith($env:SystemRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { continue }
         $key = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($trim)))
@@ -237,20 +237,20 @@ function Test-PowerShellEvents {
         $path = $ev.Data['Path']
         $oneLine = ($trim -replace '\s+', ' ')
         if ($oneLine.Length -gt 300) { $oneLine = $oneLine.Substring(0, 300) + '...' }
-        if ($risk.Severity -in 'Alto', 'Medio') {
-            Add-TimelineFinding -Time $ev.Time -Source 'PowerShell' -Severity $risk.Severity -Title "Script PowerShell sospetto eseguito il $(Format-TimelineDate $ev.Time)" `
-                -Text 'Eseguito uno script PowerShell sospetto' -Path $path -Evidence $oneLine -Detail 'Registro PowerShell Operational, evento 4104' `
+        if ($risk.Severity -in 'High', 'Medium') {
+            Add-TimelineFinding -Time $ev.Time -Source 'PowerShell' -Severity $risk.Severity -Title "Suspicious PowerShell script run on $(Format-TimelineDate $ev.Time)" `
+                -Text 'Suspicious PowerShell script run' -Path $path -Evidence $oneLine -Detail 'PowerShell Operational log, event 4104' `
                 -Mitre 'T1059.001' -Reasons $risk.Reasons `
-                -Recommendation "Leggi lo script nel Visualizzatore eventi (Registri applicazioni e servizi, Microsoft, Windows, PowerShell, Operational, evento 4104) e cerca cosa ha scaricato o eseguito."
-        } elseif ($risk.Severity -eq 'Basso') {
-            Add-TimelineEntry -Time $ev.Time -Source 'PowerShell' -Text 'Eseguito uno script PowerShell segnalato da Windows' -Path $path -Severity 'Info'
+                -Recommendation 'Read the script in Event Viewer (Applications and Services Logs, Microsoft, Windows, PowerShell, Operational, event 4104) and look for what it downloaded or ran.'
+        } elseif ($risk.Severity -eq 'Low') {
+            Add-TimelineEntry -Time $ev.Time -Source 'PowerShell' -Text 'PowerShell script flagged by Windows run' -Path $path -Severity 'Info'
         }
     }
 }
 
-# --- Programmi avviati (chiave BAM) --------------------------------------------------
-# Background Activity Moderator: per ogni utente, l'ultima esecuzione di ogni programma.
-# I percorsi sono nel formato \Device\HarddiskVolumeN\..., da tradurre in lettere di unita'.
+# --- Programs started (BAM key) ----------------------------------------------------------
+# Background Activity Moderator: for each user, the last time each program ran.
+# Paths are in the \Device\HarddiskVolumeN\... format, to be translated into drive letters.
 function Get-DeviceDriveMap {
     if (-not ('CheckBackdoor.DosDevice' -as [type])) {
         Add-Type -Namespace CheckBackdoor -Name DosDevice -MemberDefinition @'
@@ -311,19 +311,19 @@ function Test-BamEntries {
         if (-not (Test-UserWritablePath $e.Path)) { continue }
         $name = [IO.Path]::GetFileName($e.Path)
         if (-not (Test-Path -LiteralPath $e.Path -PathType Leaf)) {
-            Add-TimelineEntry -Time $e.Time -Source 'Programmi' -Text "Avviato $name, che ora non esiste piu'" -Path $e.Path -Severity 'Info'
+            Add-TimelineEntry -Time $e.Time -Source 'Programs' -Text "Started $name, which no longer exists" -Path $e.Path -Severity 'Info'
             continue
         }
         $risk = Get-CommandRisk "`"$($e.Path)`""
         $sev = ConvertTo-Severity $risk.Score
-        if ($sev -in 'Alto', 'Medio' -and -not $known.ContainsKey($e.Path.ToLowerInvariant())) {
+        if ($sev -in 'High', 'Medium' -and -not $known.ContainsKey($e.Path.ToLowerInvariant())) {
             $known[$e.Path.ToLowerInvariant()] = $true
-            Add-TimelineFinding -Time $e.Time -Source 'Programmi' -Severity $sev -Title "Programma avviato da una cartella utente: $name" `
-                -Text "Avviato $name" -Path $e.Path -Evidence "Ultimo avvio il $(Format-TimelineDate $e.Time)$(if ($e.User) { " da $($e.User)" })" `
-                -Detail 'Chiave BAM del registro (ultima esecuzione dei programmi)' -Mitre 'T1204.002' -Reasons $risk.Reasons `
-                -Recommendation "Se non riconosci questo programma, caricalo su virustotal.com. Se e' il crack o l'installer di un gioco, controlla gli altri eventi dello stesso giorno nella linea temporale."
+            Add-TimelineFinding -Time $e.Time -Source 'Programs' -Severity $sev -Title "Program started from a user folder: $name" `
+                -Text "Started $name" -Path $e.Path -Evidence "Last started on $(Format-TimelineDate $e.Time)$(if ($e.User) { " by $($e.User)" })" `
+                -Detail 'BAM registry key (last run of each program)' -Mitre 'T1204.002' -Reasons $risk.Reasons `
+                -Recommendation 'If you do not recognise this program, upload it to virustotal.com. If it is the crack or the installer of a game, check the other events of the same day in the timeline.'
         } else {
-            Add-TimelineEntry -Time $e.Time -Source 'Programmi' -Text "Avviato $name" -Path $e.Path -Severity $(if ($sev -in 'Alto', 'Medio') { $sev } else { 'Info' })
+            Add-TimelineEntry -Time $e.Time -Source 'Programs' -Text "Started $name" -Path $e.Path -Severity $(if ($sev -in 'High', 'Medium') { $sev } else { 'Info' })
         }
     }
 }
@@ -347,6 +347,6 @@ function Invoke-CheckTimeline {
     Test-BamEntries -Entries $bam -Since $since
 
     if (-not $script:IsAdmin) {
-        Write-ScanWarning "Linea temporale incompleta: senza privilegi di amministratore non si leggono il registro di sicurezza (account creati) e la chiave BAM (programmi avviati)."
+        Write-ScanWarning 'Timeline incomplete: without administrator rights the security log (accounts created) and the BAM key (programs started) cannot be read.'
     }
 }

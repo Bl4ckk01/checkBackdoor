@@ -1,14 +1,14 @@
-# Iniezioni degli stealer nelle app Electron (T1554): invece di installarsi come
-# programma, molti stealer modificano il codice di Discord o dei wallet di
-# criptovalute, che lo eseguono da soli a ogni avvio rubando token e frasi di
-# recupero. Sopravvivono alla rimozione del malware originale.
-# Usa Get-ProfileRoots dal modulo Browser.
+# Stealer injections into Electron apps (T1554): instead of installing themselves as a
+# program, many stealers modify the code of Discord or of crypto wallets, which then run
+# it on their own at every start, stealing tokens and recovery phrases. They survive the
+# removal of the original malware.
+# Uses Get-ProfileRoots from the Browser module.
 
-$script:InjectionCategory = 'Iniezioni nelle app'
+$script:InjectionCategory = 'App injections'
 $script:DiscordFlavors = 'Discord', 'DiscordCanary', 'DiscordPTB', 'DiscordDevelopment', 'Lightcord'
-# Contenuto originale di discord_desktop_core\index.js
+# Original content of discord_desktop_core\index.js
 $script:DiscordCleanIndex = '^\s*module\.exports\s*=\s*require\(\s*[''"]\./core\.asar[''"]\s*\)\s*;?\s*$'
-# Canali con cui gli stealer inviano i dati rubati
+# Channels stealers use to send the stolen data
 $script:ExfilPattern = '(?i)(discord(app)?\.com/api/webhooks|api\.telegram\.org/bot|pastebin\.com/raw|paste\.ee|ngrok\.(io|app)|trycloudflare\.com|transfer\.sh|gofile\.io|file\.io)'
 
 function Test-DiscordClients {
@@ -28,22 +28,22 @@ function Test-DiscordClients {
 
             $extra = ($text -replace "module\.exports\s*=\s*require\(\s*['""]\./core\.asar['""]\s*\)\s*;?", '').Trim()
             $sample = if ($extra.Length -gt 300) { $extra.Substring(0, 300) + '...' } else { $extra }
-            $why = @("Il file originale di $flavor contiene una sola riga; questo contiene altro codice ($($extra.Length) caratteri) che viene eseguito a ogni avvio dell'app")
-            $sev = 'Alto'
-            if ($text -match $script:ExfilPattern) { $why += "Contiene un canale per inviare dati all'esterno: $($Matches[0])" }
-            if ($text -match '(?i)(token|localStorage|webhook|billing|password|2fa|mfa|backup_codes)') { $why += 'Fa riferimento a token, password o codici di accesso dell''account' }
+            $why = @("The original $flavor file has a single line; this one has more code ($($extra.Length) characters) that runs every time the app starts")
+            $sev = 'High'
+            if ($text -match $script:ExfilPattern) { $why += "It contains a channel to send data out: $($Matches[0])" }
+            if ($text -match '(?i)(token|localStorage|webhook|billing|password|2fa|mfa|backup_codes)') { $why += 'It refers to account tokens, passwords or sign-in codes' }
             if ($text -match '(?i)betterdiscord\.asar' -and $extra -notmatch $script:ExfilPattern -and ($extra -split "`n").Count -le 3) {
-                $sev = 'Medio'
-                $why = @('E'' la modifica fatta da BetterDiscord, una mod diffusa: va bene solo se l''hai installata tu', 'Le mod di Discord violano i suoi termini di servizio e possono caricare plugin di terzi')
+                $sev = 'Medium'
+                $why = @('It is the change made by BetterDiscord, a popular mod: fine only if you installed it yourself', 'Discord mods break its terms of service and can load third-party plugins')
             }
-            Add-Finding -Category $script:InjectionCategory -Severity $sev -Title "$flavor modificato (discord_desktop_core)" -Path $index -Detail "Utente $User" `
+            Add-Finding -Category $script:InjectionCategory -Severity $sev -Title "$flavor modified (discord_desktop_core)" -Path $index -Detail "User $User" `
                 -Evidence $sample -Mitre 'T1554' -Reasons $why `
-                -Recommendation "Chiudi $flavor (anche dall'area di notifica), disinstallalo, elimina la cartella $base e reinstallalo dal sito ufficiale. Poi da un altro dispositivo cambia la password di Discord: il cambio invalida il token rubato. Attiva l'autenticazione a due fattori."
+                -Recommendation "Quit $flavor (from the notification area too), uninstall it, delete the folder $base and reinstall it from the official website. Then, from another device, change your Discord password: changing it invalidates the stolen token. Turn on two-factor authentication."
         }
     }
 }
 
-# Cerca canali di esfiltrazione dentro un file grande, a blocchi
+# Looks for exfiltration channels inside a large file, in chunks
 function Find-ExfilIndicator {
     param([string]$Path)
     $fs = $null
@@ -56,7 +56,7 @@ function Find-ExfilIndicator {
             $chunk = $tail + $latin.GetString($buf, 0, $n)
             $m = [regex]::Match($chunk, $script:ExfilPattern)
             if ($m.Success) { return $m.Value }
-            $tail = $chunk.Substring([Math]::Max(0, $chunk.Length - 64))   # sovrapposizione tra blocchi
+            $tail = $chunk.Substring([Math]::Max(0, $chunk.Length - 64))   # overlap between chunks
         }
     } catch { } finally { if ($fs) { $fs.Dispose() } }
     return $null
@@ -73,21 +73,21 @@ function Test-WalletApps {
             $asar = Join-Path $dir 'resources\app.asar'
             if (-not (Test-Path -LiteralPath $asar)) { continue }
             $asarItem = Get-Item -LiteralPath $asar -Force
-            Add-InventoryItem $script:InjectionCategory "$($w.Name) | $User | $asar" "$($asarItem.Length) byte, $($asarItem.LastWriteTimeUtc.ToString('s'))"
+            Add-InventoryItem $script:InjectionCategory "$($w.Name) | $User | $asar" "$($asarItem.Length) bytes, $($asarItem.LastWriteTimeUtc.ToString('s'))"
             $why = @(); $score = 0
             $exe = Join-Path $dir $w.Exe
             if (Test-Path -LiteralPath $exe) {
                 $gap = ($asarItem.LastWriteTime - (Get-Item -LiteralPath $exe -Force).LastWriteTime).TotalHours
                 if ($gap -gt 24) {
-                    $score += 40; $why += "Il codice dell'app (app.asar) e' stato modificato $([Math]::Round($gap / 24)) giorni dopo l'installazione: gli aggiornamenti cambiano tutti i file insieme"
+                    $score += 40; $why += "The app code (app.asar) was changed $([Math]::Round($gap / 24)) days after installation: updates change all files together"
                 }
             }
             $hit = Find-ExfilIndicator $asar
-            if ($hit) { $score += 60; $why += "Contiene un canale per inviare dati all'esterno ($hit): un wallet non ne ha bisogno" }
+            if ($hit) { $score += 60; $why += "It contains a channel to send data out ($hit): a wallet has no need for one" }
             if ($score -eq 0) { continue }
-            Add-Finding -Category $script:InjectionCategory -Severity (ConvertTo-Severity $score) -Title "$($w.Name) potrebbe essere stato modificato" -Path $asar -Detail "Utente $User" `
-                -Mitre 'T1554' -Reasons (@('Gli stealer sostituiscono il codice dei wallet per rubare la frase di recupero quando la digiti.') + $why) `
-                -Recommendation "Non aprire $($w.Name) e non digitare la frase di recupero. Da un dispositivo sicuro, crea un nuovo wallet e trasferisci i fondi; poi disinstalla $($w.Name), elimina la sua cartella e reinstallalo dal sito ufficiale."
+            Add-Finding -Category $script:InjectionCategory -Severity (ConvertTo-Severity $score) -Title "$($w.Name) may have been modified" -Path $asar -Detail "User $User" `
+                -Mitre 'T1554' -Reasons (@('Stealers replace wallet code to steal the recovery phrase when you type it.') + $why) `
+                -Recommendation "Do not open $($w.Name) and do not type your recovery phrase. From a safe device, create a new wallet and move the funds; then uninstall $($w.Name), delete its folder and reinstall it from the official website."
         }
     }
 }

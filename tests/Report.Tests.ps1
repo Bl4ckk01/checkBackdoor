@@ -1,160 +1,146 @@
-# Report: testo italiano, HTML sicuro e offline, lista bianca, confronto tra scansioni.
+# Report: safe offline HTML, allowlist, comparison between scans.
 
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     . (Get-ModuleScript Common)
+    . (Get-ModuleScript CommandRisk)
     . (Get-ModuleScript Report)
 
     function New-TestMeta {
         param([bool]$Admin = $true, [string[]]$Skipped = @())
         @{
-            Version = 'test'; Computer = 'PC-TEST'; User = 'PC-TEST\utente'; Date = '01/01/2026 10:00'; Duration = '1 min 2 s'
+            Version = 'test'; Computer = 'TEST-PC'; User = 'TEST-PC\user'; Date = '2026-01-01 10:00'; Duration = '1 min 2 s'
             Admin = $Admin; Skipped = $Skipped; Errors = @(); Ignored = 0
-            Examined = @{ 'Avvio automatico' = 10; 'Servizi' = 5 }; Files = @{ Json = 'a.json'; Csv = 'a.csv' }
+            Examined = @{ 'Autostart' = 10; 'Services' = 5 }; Files = @{ Json = 'a.json'; Csv = 'a.csv' }
         }
-    }
-}
-
-Describe 'ConvertTo-ItalianProse' {
-    It 'mette gli accenti in <In>' -ForEach @(
-        @{ In = "E' uno script"; Out = "{EUpper} uno script" }
-        @{ In = "c'e' un file"; Out = "c'{e} un file" }
-        @{ In = "non esiste piu'."; Out = "non esiste pi{u}." }
-        @{ In = "perche' puo'"; Out = "perch{eAcute} pu{o}" }
-        @{ In = "Attivita' pianificate"; Out = "Attivit{a} pianificate" }
-        @{ In = "e' cosi'"; Out = "{e} cos{i}" }
-    ) {
-        $expected = $Out
-        foreach ($k in $script:Chr.Keys) { $expected = $expected.Replace("{$k}", $script:Chr[$k]) }
-        ConvertTo-ItalianProse $In | Should -BeExactly $expected
-    }
-    It 'non tocca gli apostrofi normali e i percorsi' {
-        ConvertTo-ItalianProse "l'utente apre C:\a\b.exe" | Should -BeExactly "l'utente apre C:\a\b.exe"
     }
 }
 
 Describe 'New-HtmlReport' {
     BeforeAll {
         $findings = @(
-            New-TestFinding -Severity 'Alto' -Title '<img src=x onerror=alert(1)>' -Evidence '<script>alert(2)</script>'
-            New-TestFinding -Severity 'Medio' -Category 'Servizi' -Title 'Servizio di prova'
-            New-TestFinding -Severity 'Info' -Category 'Servizi' -Title 'Solo informazione'
+            New-TestFinding -Severity 'High' -Title '<img src=x onerror=alert(1)>' -Evidence '<script>alert(2)</script>'
+            New-TestFinding -Severity 'Medium' -Category 'Services' -Title 'Test service'
+            New-TestFinding -Severity 'Info' -Category 'Services' -Title 'Information only'
         )
         $html = New-HtmlReport -Findings $findings -Meta (New-TestMeta -Skipped 'Wmi')
     }
-    It 'trasforma in testo i nomi scelti da un attaccante' {
+    It 'turns names chosen by an attacker into text' {
         $html | Should -Not -Match '<img src=x'
         $html | Should -Not -Match '<script>alert'
         $html | Should -Match '&lt;img src=x onerror=alert\(1\)&gt;'
     }
-    It 'non carica nulla da internet all''apertura' {
+    It 'loads nothing from the internet when opened' {
         $html | Should -Not -Match '<script[^>]+src='
         $html | Should -Not -Match '<link[^>]+href='
         $html | Should -Not -Match '<img\s'
         $html | Should -Not -Match '@import|url\(\s*["'']?https?:'
     }
-    It 'mostra il verdetto per un indizio ad alto rischio' {
-        $html | Should -Match 'Un indizio ad alto rischio'
+    It 'is in English' {
+        $html | Should -Match '<html lang="en">'
     }
-    It 'conta come segnalazioni visibili solo quelle non informative' {
+    It 'shows the verdict for one high-risk clue' {
+        $html | Should -Match 'One high-risk clue'
+    }
+    It 'counts only non-informational findings as visible' {
         $html | Should -Match '<span data-all-count>2</span>'
         $html | Should -Match 'data-count>2<'
     }
-    It 'segna come non eseguita l''area di un controllo saltato' {
-        $html | Should -Match 'data-area="WMI"[^>]*><span class="a-name">WMI</span><span class="a-meta">[^<]*</span><span class="a-state s-off">Non eseguito'
+    It 'marks the area of a skipped check as not run' {
+        $html | Should -Match 'data-area="WMI"[^>]*><span class="a-name">WMI</span><span class="a-meta">[^<]*</span><span class="a-state s-off">Not run'
     }
-    It 'collega i file JSON e CSV della stessa scansione' {
+    It 'links the JSON and CSV files of the same scan' {
         $html | Should -Match 'href="a\.json"'
         $html | Should -Match 'href="a\.csv"'
     }
-    It 'avvisa quando la scansione non e'' da amministratore' {
-        New-HtmlReport -Findings $findings -Meta (New-TestMeta -Admin $false) | Should -Match 'Controlli incompleti'
+    It 'warns when the scan did not run as administrator' {
+        New-HtmlReport -Findings $findings -Meta (New-TestMeta -Admin $false) | Should -Match 'Incomplete checks'
     }
-    It 'dice che non ci sono indizi quando la lista e'' vuota' {
+    It 'says there are no clues when the list is empty' {
         $empty = New-HtmlReport -Findings @() -Meta (New-TestMeta)
-        $empty | Should -Match 'Nessun indizio di backdoor'
-        $empty | Should -Match 'Nessuna segnalazione: tutte le aree'
+        $empty | Should -Match 'No signs of a backdoor'
+        $empty | Should -Match 'No findings: every area'
     }
 }
 
-Describe 'Elementi nascosti dalla lista bianca nel report' {
-    It 'li elenca con la regola, come testo' {
-        $hidden = @([pscustomobject]@{ Id = 'a1'; Category = 'Avvio automatico'; Severity = 'Medio'; Title = '<b>Nascosto</b>'; Path = 'C:\Sicuro\x.exe'; Rule = 'percorso C:\Sicuro\*' })
+Describe 'Items hidden by the allowlist in the report' {
+    It 'lists them with the rule, as text' {
+        $hidden = @([pscustomobject]@{ Id = 'a1'; Category = 'Autostart'; Severity = 'Medium'; Title = '<b>Hidden</b>'; Path = 'C:\SafeApps\x.exe'; Rule = 'path C:\SafeApps\*' })
         $html = New-HtmlReport -Findings @() -Meta (New-TestMeta) -Ignored $hidden
         $html | Should -Match 'id="ig-h"'
-        $html | Should -Match '&lt;b&gt;Nascosto&lt;/b&gt;'
-        $html | Should -Match ([regex]::Escape('percorso C:\Sicuro\*'))
+        $html | Should -Match '&lt;b&gt;Hidden&lt;/b&gt;'
+        $html | Should -Match ([regex]::Escape('path C:\SafeApps\*'))
     }
-    It 'non mostra la sezione se non e'' stato nascosto nulla' {
+    It 'does not show the section if nothing was hidden' {
         New-HtmlReport -Findings @() -Meta (New-TestMeta) | Should -Not -Match 'id="ig-h"'
     }
 }
 
-Describe 'Azioni nel report' {
-    It 'offre Disattiva solo agli elementi che si possono annullare, e Ignora mai agli Info' {
-        $con = New-TestFinding -Title 'Con azione' -Path 'C:\Users\x\AppData\a.exe'
-        $con | Add-Member -NotePropertyName Remedy -NotePropertyValue @{ Kind = 'RegistryValue' }
-        $senza = New-TestFinding -Title 'Senza azione'
-        $info = New-TestFinding -Title 'Solo informazione' -Severity 'Info'
-        $html = New-HtmlReport -Findings @($con, $senza, $info) -Meta (New-TestMeta)
+Describe 'Actions in the report' {
+    It 'offers Disable only for items that can be undone, and Ignore never for Info' {
+        $with = New-TestFinding -Title 'With action' -Path 'C:\Users\x\AppData\a.exe'
+        $with | Add-Member -NotePropertyName Remedy -NotePropertyValue @{ Kind = 'RegistryValue' }
+        $without = New-TestFinding -Title 'Without action'
+        $info = New-TestFinding -Title 'Information only' -Severity 'Info'
+        $html = New-HtmlReport -Findings @($with, $without, $info) -Meta (New-TestMeta)
         ([regex]::Matches($html, 'data-act="disable"')).Count | Should -Be 1
         ([regex]::Matches($html, 'data-act="ignore"')).Count | Should -Be 2
-        $html | Should -Match ('class="acts" data-id="' + $con.Id + '"')
+        $html | Should -Match ('class="acts" data-id="' + $with.Id + '"')
     }
-    It 'nasconde le azioni fuori dall''app' {
+    It 'hides the actions outside the app' {
         New-HtmlReport -Findings @(New-TestFinding) -Meta (New-TestMeta) | Should -Match '\.acts\{display:none\}'
     }
 }
 
-Describe 'Linea temporale nel report' {
+Describe 'Timeline in the report' {
     BeforeAll {
-        $finding = New-TestFinding -Category 'Linea temporale' -Title 'Account creato: supporto' -Evidence 'Creato da bob'
-        function New-Entry([int]$Minutes, [string]$Text = 'Avviato tool.exe', [string]$FindingId) {
-            [pscustomobject]@{ Time = (Get-Date '2026-03-01 10:00').AddMinutes($Minutes).ToString('s'); Source = 'Programmi'; Text = $Text; Path = 'C:\Users\x\Downloads\tool.exe'; Severity = 'Info'; FindingId = $FindingId }
+        $finding = New-TestFinding -Category 'Timeline' -Title 'Account created: support' -Evidence 'Created by bob'
+        function New-Entry([int]$Minutes, [string]$Text = 'Started tool.exe', [string]$FindingId) {
+            [pscustomobject]@{ Time = (Get-Date '2026-03-01 10:00').AddMinutes($Minutes).ToString('s'); Source = 'Programs'; Text = $Text; Path = 'C:\Users\x\Downloads\tool.exe'; Severity = 'Info'; FindingId = $FindingId }
         }
     }
-    It 'non mostra la sezione se il controllo non e'' stato eseguito' {
+    It 'does not show the section if the check did not run' {
         New-HtmlReport -Findings @() -Meta (New-TestMeta) | Should -Not -Match 'id="tl-h"'
     }
-    It 'dice che non ci sono eventi quando la linea temporale e'' vuota' {
-        New-HtmlReport -Findings @() -Meta (New-TestMeta) -Timeline @() | Should -Match 'Nessun evento rilevante'
+    It 'says there are no events when the timeline is empty' {
+        New-HtmlReport -Findings @() -Meta (New-TestMeta) -Timeline @() | Should -Match 'No relevant events'
     }
-    It 'mette gli eventi dal piu'' recente e collega la segnalazione' {
-        $html = New-HtmlReport -Findings @($finding) -Meta (New-TestMeta) -Timeline @((New-Entry 0 'primo'), (New-Entry 5 'secondo' $finding.Id))
-        $html.IndexOf('secondo') | Should -BeLessThan $html.IndexOf('primo')
+    It 'puts the most recent events first and links the finding' {
+        $html = New-HtmlReport -Findings @($finding) -Meta (New-TestMeta) -Timeline @((New-Entry 0 'older-event'), (New-Entry 5 'newer-event' $finding.Id))
+        $html.IndexOf('newer-event') | Should -BeLessThan $html.IndexOf('older-event')
         $html | Should -Match ([regex]::Escape("href=""#f-$($finding.Id)"""))
-        $html | Should -Match '01/03/2026 10:05'
+        $html | Should -Match '2026-03-01 10:05'
     }
-    It 'trasforma in testo i nomi dei programmi' {
-        New-HtmlReport -Findings @() -Meta (New-TestMeta) -Timeline @(New-Entry 0 'Avviato <img src=x>') | Should -Match '&lt;img src=x&gt;'
+    It 'turns program names into text' {
+        New-HtmlReport -Findings @() -Meta (New-TestMeta) -Timeline @(New-Entry 0 'Started <img src=x>') | Should -Match '&lt;img src=x&gt;'
     }
-    It 'mostra al massimo 60 eventi e rimanda al JSON' {
+    It 'shows at most 60 events and points to the JSON' {
         $many = foreach ($i in 1..65) { New-Entry $i }
         $html = New-HtmlReport -Findings @() -Meta (New-TestMeta) -Timeline $many
         ([regex]::Matches($html, 'class="tl-row"')).Count | Should -Be 60
-        $html | Should -Match 'Altri 5 eventi'
+        $html | Should -Match '5 more events'
     }
 }
 
 Describe 'Invoke-Allowlist' {
     BeforeEach {
         $script:Findings = New-Object System.Collections.Generic.List[object]
-        $script:Findings.Add((New-TestFinding -Title 'Da tenere' -Path 'C:\Altro\x.exe'))
-        $script:Findings.Add((New-TestFinding -Title 'Per percorso' -Path 'C:\Sicuro\app\x.exe'))
-        $script:Findings.Add((New-TestFinding -Title 'Ignorami pure'))
-        $script:Findings.Add((New-TestFinding -Title 'Per hash' -Sha256 'abcdef'))
+        $script:Findings.Add((New-TestFinding -Title 'Keep me' -Path 'C:\Other\x.exe'))
+        $script:Findings.Add((New-TestFinding -Title 'By path' -Path 'C:\SafeApps\app\x.exe'))
+        $script:Findings.Add((New-TestFinding -Title 'IgnoreMe please'))
+        $script:Findings.Add((New-TestFinding -Title 'By hash' -Sha256 'abcdef'))
         $shared = Join-Path $TestDrive 'allowlist.json'
         $local = Join-Path $TestDrive 'allowlist.local.json'
-        Set-Content -LiteralPath $shared -Value '{ "paths": ["C:\\Sicuro\\*"], "sha256": [], "titles": [] }'
-        Set-Content -LiteralPath $local -Value '{ "paths": [], "sha256": ["ABCDEF"], "titles": ["*Ignorami*"] }'
+        Set-Content -LiteralPath $shared -Value '{ "paths": ["C:\\SafeApps\\*"], "sha256": [], "titles": [] }'
+        Set-Content -LiteralPath $local -Value '{ "paths": [], "sha256": ["ABCDEF"], "titles": ["*IgnoreMe*"] }'
     }
-    It 'unisce la lista condivisa e quella locale' {
+    It 'merges the shared list and the local one' {
         Invoke-Allowlist -Path $shared, $local | Should -Be 3
         $script:Findings | Should -HaveCount 1
-        $script:Findings[0].Title | Should -Be 'Da tenere'
+        $script:Findings[0].Title | Should -Be 'Keep me'
     }
-    It 'ignora un file che non esiste' {
-        Invoke-Allowlist -Path (Join-Path $TestDrive 'manca.json') | Should -Be 0
+    It 'ignores a file that does not exist' {
+        Invoke-Allowlist -Path (Join-Path $TestDrive 'missing.json') | Should -Be 0
         $script:Findings | Should -HaveCount 4
     }
 }
@@ -163,49 +149,50 @@ Describe 'Compare-WithPrevious' {
     BeforeEach {
         $script:Findings.Clear(); $script:Inventory.Clear()
         $prev = [ordered]@{
-            Meta = @{ Date = '01/01/2026 09:00' }
+            Meta = @{ Date = '2026-01-01 09:00' }
             Inventory = @(
-                @{ Category = 'Avvio automatico'; Key = 'Run | Uno'; Value = 'uno.exe' }
-                @{ Category = 'Avvio automatico'; Key = 'Run | Tolto'; Value = 'tolto.exe' }
-                @{ Category = 'Rete'; Key = 'Established | app.exe | 50000'; Value = '1.2.3.4:443' }
-                @{ Category = 'Certificati'; Key = 'Root macchina'; Value = 'ABC' }
+                @{ Category = 'Autostart'; Key = 'Run | One'; Value = 'one.exe' }
+                @{ Category = 'Autostart'; Key = 'Run | Gone'; Value = 'gone.exe' }
+                @{ Category = 'Network'; Key = 'Established | app.exe | 50000'; Value = '1.2.3.4:443' }
+                @{ Category = 'Certificates'; Key = 'Machine root'; Value = 'ABC' }
             )
         }
         $json = Join-Path $TestDrive 'prev.json'
         Set-Content -LiteralPath $json -Value ($prev | ConvertTo-Json -Depth 4)
-        Add-InventoryItem 'Avvio automatico' 'Run | Uno' 'uno.exe'
-        Add-InventoryItem 'Avvio automatico' 'Run | Nuovo' 'nuovo.exe'
-        Add-InventoryItem 'Rete' 'Established | app.exe | 50123' '5.6.7.8:443'
+        Add-InventoryItem 'Autostart' 'Run | One' 'one.exe'
+        Add-InventoryItem 'Autostart' 'Run | New' 'new.exe'
+        Add-InventoryItem 'Network' 'Established | app.exe | 50123' '5.6.7.8:443'
         Compare-WithPrevious -PreviousJson $json
     }
-    It 'segnala la voce di avvio comparsa dopo la scansione precedente' {
-        $new = @($script:Findings | Where-Object Title -like 'Nuovo*')
+    It 'flags the startup entry that appeared after the previous scan' {
+        $new = @($script:Findings | Where-Object Title -like 'New*')
         $new | Should -HaveCount 1
-        $new[0].Title | Should -Match 'Run \| Nuovo'
-        $new[0].Severity | Should -Be 'Medio'
+        $new[0].Title | Should -Match 'Run \| New'
+        $new[0].Severity | Should -Be 'Medium'
+        $new[0].Category | Should -Be 'Changes since the previous scan'
     }
-    It 'ignora le connessioni di rete, che cambiano di continuo' {
+    It 'ignores network connections, which change all the time' {
         $script:Findings | Where-Object Title -match 'Established' | Should -BeNullOrEmpty
     }
-    It 'riporta come informazione la voce rimossa' {
-        $gone = @($script:Findings | Where-Object Title -like 'Rimosso*')
+    It 'reports the removed entry as information' {
+        $gone = @($script:Findings | Where-Object Title -like 'Removed*')
         $gone | Should -HaveCount 1
         $gone[0].Severity | Should -Be 'Info'
     }
-    It 'non considera rimossi gli elementi di un controllo saltato' {
-        $script:Findings | Where-Object Title -match 'Certificati' | Should -BeNullOrEmpty
+    It 'does not treat items of a skipped check as removed' {
+        $script:Findings | Where-Object Title -match 'Certificates' | Should -BeNullOrEmpty
     }
 }
 
 Describe 'Get-ExaminedCounts' {
-    It 'somma le voci per area e usa i conteggi dei file' {
+    It 'adds up the entries per area and uses the file counts' {
         $script:Inventory.Clear(); $script:ProcessTable = $null
-        Add-InventoryItem 'Servizi' 'Servizio: a' 'a'
-        Add-InventoryItem 'Modalita provvisoria' 'Minimal | a' 'a'
-        Add-InventoryItem 'File sospetti' 'File eseguibili esaminati' '363'
+        Add-InventoryItem 'Services' 'Service: a' 'a'
+        Add-InventoryItem 'Safe Mode' 'Minimal | a' 'a'
+        Add-InventoryItem 'Suspicious files' 'Executable files examined' '363'
         $c = Get-ExaminedCounts
-        $c['Servizi'] | Should -Be 2
-        $c['File sospetti'] | Should -Be 363
-        $c.ContainsKey('Processi') | Should -BeFalse
+        $c['Services'] | Should -Be 2
+        $c['Suspicious files'] | Should -Be 363
+        $c.ContainsKey('Processes') | Should -BeFalse
     }
 }

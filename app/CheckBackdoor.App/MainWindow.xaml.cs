@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.Json;
@@ -12,13 +12,13 @@ using Microsoft.Win32;
 namespace CheckBackdoor.App;
 
 /// <summary>
-/// Finestra che ospita l'interfaccia (HTML in ui\) e la collega al motore. L'interfaccia
-/// manda messaggi { type, ... }; la finestra risponde e inoltra gli eventi della scansione.
+/// Window that hosts the interface (HTML in ui\) and connects it to the engine. The interface
+/// sends { type, ... } messages; the window replies and forwards the scan events.
 /// </summary>
 public partial class MainWindow : Window
 {
     const string AppHost = "app.checkbackdoor.example";
-    // Unici siti esterni che i report linkano: si aprono nel browser predefinito
+    // The only external sites the reports link to: they open in the default browser
     static readonly HashSet<string> ExternalHosts = new(StringComparer.OrdinalIgnoreCase)
         { "www.virustotal.com", "virustotal.com", "attack.mitre.org" };
 
@@ -36,11 +36,11 @@ public partial class MainWindow : Window
 
     async Task InitializeWebAsync()
     {
-        // Succede se CheckBackdoor.exe viene copiato da solo, senza le cartelle accanto:
-        // meglio spiegarlo che chiudersi con un errore di WebView2.
+        // Happens if CheckBackdoor.exe is copied alone, without the folders next to it:
+        // better to explain it than to close with a WebView2 error.
         if (!Directory.Exists(AppPaths.UiDir))
         {
-            MessageBox.Show(this, $"Manca la cartella dell'interfaccia:\n{AppPaths.UiDir}\n\nCheckBackdoor.exe deve restare insieme alle cartelle ui ed engine con cui è stato compilato. Avvia il programma dalla sua cartella invece di copiarlo da solo.",
+            MessageBox.Show(this, $"The interface folder is missing:\n{AppPaths.UiDir}\n\nCheckBackdoor.exe must stay together with the ui and engine folders it was built with. Start the program from its folder instead of copying it alone.",
                 "CheckBackdoor", MessageBoxButton.OK, MessageBoxImage.Warning);
             Close();
             return;
@@ -53,7 +53,7 @@ public partial class MainWindow : Window
         }
         catch (WebView2RuntimeNotFoundException)
         {
-            MessageBox.Show(this, "Per l'interfaccia serve Microsoft Edge WebView2, incluso in Windows 11. Installalo da microsoft.com/edge/webview2 e riapri CheckBackdoor.",
+            MessageBox.Show(this, "The interface needs Microsoft Edge WebView2, included in Windows 11. Install it from microsoft.com/edge/webview2 and open CheckBackdoor again.",
                 "CheckBackdoor", MessageBoxButton.OK, MessageBoxImage.Warning);
             Close();
             return;
@@ -70,9 +70,9 @@ public partial class MainWindow : Window
         s.AreBrowserAcceleratorKeysEnabled = s.AreDevToolsEnabled;
 
         core.SetVirtualHostNameToFolderMapping(AppHost, AppPaths.UiDir, CoreWebView2HostResourceAccessKind.Deny);
-        // I report si aprono nell'iframe della pagina dell'app, che ha un'altra origine: con
-        // "Deny" WebView2 bloccherebbe anche quello. "DenyCors" lo permette, ma impedisce a
-        // qualsiasi pagina di leggerne il contenuto con fetch/XHR.
+        // Reports open in the iframe of the app page, which has another origin: with "Deny"
+        // WebView2 would block that too. "DenyCors" allows it, but stops any page from
+        // reading their content with fetch/XHR.
         core.SetVirtualHostNameToFolderMapping(ReportStore.ReportHost, AppPaths.ReportsDir, CoreWebView2HostResourceAccessKind.DenyCors);
 
         core.NavigationStarting += (_, e) => GuardNavigation(e.Uri, () => e.Cancel = true);
@@ -83,7 +83,7 @@ public partial class MainWindow : Window
         Web.Source = new Uri($"https://{AppHost}/index.html");
     }
 
-    // L'interfaccia puo' caricare solo le sue pagine e i report; tutto il resto e' bloccato
+    // The interface can load only its own pages and the reports; everything else is blocked
     static void GuardNavigation(string uri, Action cancel)
     {
         if (!Uri.TryCreate(uri, UriKind.Absolute, out var u)) { cancel(); return; }
@@ -113,15 +113,15 @@ public partial class MainWindow : Window
                 StartScan(null);
                 break;
             case "pickFile":
-                var fileDialog = new OpenFileDialog { Title = "Scegli il file da controllare", CheckFileExists = true };
+                var fileDialog = new OpenFileDialog { Title = "Choose the file to check", CheckFileExists = true };
                 if (fileDialog.ShowDialog(this) == true) StartScan(fileDialog.FileName);
                 break;
             case "pickFolder":
-                var folderDialog = new OpenFolderDialog { Title = "Scegli la cartella da controllare" };
+                var folderDialog = new OpenFolderDialog { Title = "Choose the folder to check" };
                 if (folderDialog.ShowDialog(this) == true) StartScan(folderDialog.FolderName);
                 break;
             case "checkDropped":
-                // Il file trascinato arriva come oggetto aggiuntivo: e' l'unico modo per conoscerne il percorso
+                // The dropped file arrives as an additional object: the only way to know its path
                 if (e.AdditionalObjects?.Count > 0 && e.AdditionalObjects[0] is CoreWebView2File dropped) StartScan(dropped.Path);
                 break;
             case "cancelScan":
@@ -146,14 +146,14 @@ public partial class MainWindow : Window
                 break;
             case "saveVtKey":
                 var key = ((string?)msg?["key"])?.Trim();
-                if (!Secrets.IsValidVirusTotalKey(key)) { Post(Notice("La chiave di VirusTotal è fatta di 64 caratteri tra 0-9 e a-f: controlla di averla copiata tutta.", false)); break; }
+                if (!Secrets.IsValidVirusTotalKey(key)) { Post(Notice("The VirusTotal key is 64 characters from 0-9 and a-f: make sure you copied all of it.", false)); break; }
                 Secrets.SaveVirusTotalKey(key!.ToLowerInvariant());
-                Post(Notice("Chiave salvata, cifrata per il tuo utente Windows. Dalla prossima verifica i file segnalati vengono controllati su VirusTotal.", true));
+                Post(Notice("Key saved, encrypted for your Windows user. From the next scan the flagged files are looked up on VirusTotal.", true));
                 SendSettings();
                 break;
             case "deleteVtKey":
                 Secrets.DeleteVirusTotalKey();
-                Post(Notice("Chiave di VirusTotal rimossa da questo PC.", true));
+                Post(Notice("VirusTotal key removed from this PC.", true));
                 SendSettings();
                 break;
             case "setSchedule":
@@ -178,7 +178,7 @@ public partial class MainWindow : Window
         if (older is null || newer is null || !AppPaths.IsInside(older, AppPaths.ReportsDir) || !AppPaths.IsInside(newer, AppPaths.ReportsDir)
             || !File.Exists(older) || !File.Exists(newer)) return;
         try { Post(new JsonObject { ["type"] = "compare", ["result"] = ReportStore.Compare(older, newer) }); }
-        catch (Exception ex) { Post(Notice("Confronto non riuscito: " + ex.Message, false)); }
+        catch (Exception ex) { Post(Notice("Comparison failed: " + ex.Message, false)); }
     }
 
     void SendSettings()
@@ -206,8 +206,8 @@ public partial class MainWindow : Window
         SettingsStore.Save(settings);
         bool ok = true;
         if (enabled) ok = Scheduler.Create(day, hour); else Scheduler.Delete();
-        Post(Notice(!ok ? "Non sono riuscito a creare l'attività pianificata."
-            : enabled ? "Verifica programmata: i risultati compariranno nello storico." : "Verifica programmata disattivata.", ok));
+        Post(Notice(!ok ? "Could not create the scheduled task."
+            : enabled ? "Scheduled scan on: the results will show up in the history." : "Scheduled scan turned off.", ok));
         SendSettings();
     }
 
@@ -219,14 +219,14 @@ public partial class MainWindow : Window
         SendSettings();
     }
 
-    // Le azioni arrivano dal report mostrato nell'app: id e percorso del report si verificano,
-    // e cosa fare si legge dal file del report, non dal messaggio.
+    // Actions come from the report shown in the app: the id and the report path are checked,
+    // and what to do is read from the report file, not from the message.
     async Task FindingActionAsync(string? action, string? id, string? report)
     {
         if (action is null || id is null || report is null || !AppPaths.IsInside(report, AppPaths.ReportsDir) || !File.Exists(report)) return;
         var f = ReportStore.FindFinding(report, id);
         if (f is null) return;
-        var title = (string?)f["Title"] ?? "elemento";
+        var title = (string?)f["Title"] ?? "item";
         void Reply(string text, bool done) => Post(new JsonObject { ["type"] = "actionResult", ["id"] = id, ["action"] = action, ["text"] = text, ["done"] = done });
 
         switch (action)
@@ -234,42 +234,42 @@ public partial class MainWindow : Window
             case "reveal":
                 var p = (string?)f["Path"];
                 if (p is not null && File.Exists(p)) Process.Start("explorer.exe", $"/select,\"{p}\"");
-                else Reply("Il file non esiste più.", false);
+                else Reply("The file no longer exists.", false);
                 break;
             case "ignore":
                 IgnoreStore.Add(id, title, (string?)f["Category"], (string?)f["Sha256"]);
-                Reply("Sarà ignorato nelle prossime verifiche. Puoi ripristinarlo dalle impostazioni.", true);
+                Reply("It will be ignored in future scans. You can restore it from the settings.", true);
                 break;
             case "disable":
-                if (f["Remedy"] is not JsonObject remedy) { Reply("Questo elemento non si può disattivare da qui.", false); break; }
+                if (f["Remedy"] is not JsonObject remedy) { Reply("This item cannot be disabled from here.", false); break; }
                 var what = (string?)remedy["Kind"] switch
                 {
-                    "RegistryValue" => "La voce verrà tolta dalle chiavi di avvio (il suo contenuto resta nel backup).",
-                    "File" => "Il file verrà spostato nella cartella dei backup di CheckBackdoor, non cancellato.",
-                    "ScheduledTask" => "L'attivita' pianificata verrà disattivata, non eliminata.",
-                    "Service" => "Il servizio verrà impostato su Disabilitato e fermato.",
+                    "RegistryValue" => "The entry will be removed from the startup keys (its content stays in the backup).",
+                    "File" => "The file will be moved to the CheckBackdoor backup folder, not deleted.",
+                    "ScheduledTask" => "The scheduled task will be disabled, not deleted.",
+                    "Service" => "The service will be set to Disabled and stopped.",
                     _ => "",
                 };
                 var admin = remedy["Admin"]?.GetValue<bool>() != false;
-                // Titolo e bersaglio arrivano dallo stesso file del report: si mostra anche cio' che
-                // verra' toccato davvero, cosi' un titolo ingannevole non basta a far disattivare altro
+                // Title and target come from the same report file: what will really be touched is
+                // shown too, so a misleading title is not enough to get something else disabled
                 var target = (string?)remedy["Kind"] switch
                 {
-                    "RegistryValue" => $"{(string?)remedy["Key"]}\nvoce: {(string?)remedy["Name"]}",
+                    "RegistryValue" => $"{(string?)remedy["Key"]}\nvalue: {(string?)remedy["Name"]}",
                     "File" => (string?)remedy["Path"],
-                    "ScheduledTask" => $"attività {(string?)remedy["Path"]}{(string?)remedy["Name"]}",
-                    "Service" => $"servizio {(string?)remedy["Name"]}",
+                    "ScheduledTask" => $"task {(string?)remedy["Path"]}{(string?)remedy["Name"]}",
+                    "Service" => $"service {(string?)remedy["Name"]}",
                     _ => null,
                 };
-                if (target is not null) what += $"\n\nElemento che verrà modificato:\n{target}\n";
-                var answer = MessageBox.Show(this, $"Disattivare \"{title}\"?\n\n{what}\nPotrai annullare in qualsiasi momento dalle impostazioni." +
-                    (admin ? "\n\nWindows chiederà i privilegi di amministratore." : ""), "CheckBackdoor", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (target is not null) what += $"\n\nItem that will be changed:\n{target}\n";
+                var answer = MessageBox.Show(this, $"Disable \"{title}\"?\n\n{what}\nYou can undo it any time from the settings." +
+                    (admin ? "\n\nWindows will ask for administrator rights." : ""), "CheckBackdoor", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (answer != MessageBoxResult.Yes) break;
-                Reply("Disattivazione in corso...", false);
+                Reply("Disabling...", false);
                 var request = new JsonObject { ["FindingId"] = id, ["Title"] = title, ["Remedy"] = remedy.DeepClone() };
                 var r = await ActionRunner.DisableAsync(request, admin);
                 var ok = r["ok"]?.GetValue<bool>() == true;
-                Reply(ok ? "Disattivato. Si annulla dalle impostazioni." : "Non disattivato: " + (string?)r["message"], ok);
+                Reply(ok ? "Disabled. You can undo it from the settings." : "Not disabled: " + (string?)r["message"], ok);
                 break;
         }
     }
@@ -298,7 +298,7 @@ public partial class MainWindow : Window
         _runner.Aborted += message => Dispatcher.Invoke(() => Post(new JsonObject { ["type"] = "aborted", ["message"] = message }));
         try
         {
-            // Elementi ignorati e chiave di VirusTotal (cifrata): il motore li legge dai file
+            // Ignored items and VirusTotal key (encrypted): the engine reads them from the files
             var extra = new List<string> { "-AllowlistFile", AppPaths.IgnoredFile, "-VirusTotalKeyFile", AppPaths.VirusTotalKeyFile };
             if (file is not null) extra.AddRange(["-File", file]);
             _runner.Start(AppPaths.EngineScript, AppPaths.ReportsDir, AppPaths.RunsDir, extra);
@@ -306,7 +306,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            Post(new JsonObject { ["type"] = "aborted", ["message"] = "La verifica non è partita: " + ex.Message });
+            Post(new JsonObject { ["type"] = "aborted", ["message"] = "The scan did not start: " + ex.Message });
         }
     }
 
@@ -315,7 +315,7 @@ public partial class MainWindow : Window
         JsonNode? evt;
         try { evt = JsonNode.Parse(line); } catch (JsonException) { return; }
         var msg = new JsonObject { ["type"] = "engine", ["event"] = evt };
-        // A fine verifica l'interfaccia riceve anche il riassunto e l'indirizzo del report
+        // At the end of the scan the interface also gets the summary and the report address
         if ((string?)evt?["type"] == "scan.completed" && (string?)evt?["data"]?["report"]?["json"] is string json)
             msg["summary"] = ReportStore.Summarize(json);
         Post(msg);

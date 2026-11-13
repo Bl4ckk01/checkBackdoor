@@ -1,10 +1,11 @@
-# Iniezioni in Discord e nei wallet, su una cartella AppData\Local finta.
-# I canali di esfiltrazione sono composti a runtime: scritti per intero potrebbero
-# far bloccare il file da AMSI.
+# Injections into Discord and wallets, on a fake AppData\Local folder.
+# Exfiltration channels are assembled at runtime: written out in full they could
+# get the file blocked by AMSI.
 
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     . (Get-ModuleScript Common)
+    . (Get-ModuleScript CommandRisk)
     . (Get-ModuleScript Injections)
 
     $local = Join-Path $TestDrive 'Local'
@@ -17,20 +18,20 @@ BeforeAll {
     $hook = 'https://' + 'disc' + 'ord.com/api/web' + 'hooks/123/abc'
     New-DiscordIndex 'Discord' $clean
     New-DiscordIndex 'DiscordCanary' ("const u = '$hook';`nfunction send(t) { /* token */ }`n" + $clean)
-    New-DiscordIndex 'DiscordPTB' ("require(`"C:\\Utente\\BetterDiscord\\data\\betterdiscord.asar`");`n" + $clean)
+    New-DiscordIndex 'DiscordPTB' ("require(`"C:\\User\\BetterDiscord\\data\\betterdiscord.asar`");`n" + $clean)
 
-    # Exodus manomesso: app.asar modificato mesi dopo l'eseguibile e con un bot Telegram
+    # Tampered Exodus: app.asar changed months after the executable and with a Telegram bot
     $exodus = Join-Path $local 'exodus\app-24.1.1'
     New-Item -ItemType Directory -Path (Join-Path $exodus 'resources') -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $exodus 'Exodus.exe') -Value 'finto'
+    Set-Content -LiteralPath (Join-Path $exodus 'Exodus.exe') -Value 'fake'
     (Get-Item -LiteralPath (Join-Path $exodus 'Exodus.exe')).LastWriteTime = (Get-Date).AddDays(-90)
-    Set-Content -LiteralPath (Join-Path $exodus 'resources\app.asar') -Value ('codice ' * 1000 + 'https://' + 'api.tele' + 'gram.org/bot' + '123:abc/sendMessage')
+    Set-Content -LiteralPath (Join-Path $exodus 'resources\app.asar') -Value ('code ' * 1000 + 'https://' + 'api.tele' + 'gram.org/bot' + '123:abc/sendMessage')
 
-    # Atomic Wallet integro: stessi tempi, nessun canale
+    # Intact Atomic Wallet: same times, no channel
     $atomic = Join-Path $local 'Programs\atomic'
     New-Item -ItemType Directory -Path (Join-Path $atomic 'resources') -Force | Out-Null
-    Set-Content -LiteralPath (Join-Path $atomic 'Atomic Wallet.exe') -Value 'finto'
-    Set-Content -LiteralPath (Join-Path $atomic 'resources\app.asar') -Value ('codice ' * 1000)
+    Set-Content -LiteralPath (Join-Path $atomic 'Atomic Wallet.exe') -Value 'fake'
+    Set-Content -LiteralPath (Join-Path $atomic 'resources\app.asar') -Value ('code ' * 1000)
 
     $script:Findings.Clear(); $script:Inventory.Clear()
     Test-DiscordClients -LocalAppData $local -User 'test'
@@ -38,32 +39,32 @@ BeforeAll {
 }
 
 Describe 'Discord' {
-    It 'mette in inventario ogni client trovato' {
+    It 'inventories every client found' {
         @($script:Inventory | Where-Object Key -like 'Discord*') | Should -HaveCount 3
     }
-    It 'non segnala il client con il file originale' {
-        $script:Findings | Where-Object Title -like 'Discord modificato*' | Should -BeNullOrEmpty
+    It 'does not flag the client with the original file' {
+        $script:Findings | Where-Object Title -like 'Discord modified*' | Should -BeNullOrEmpty
     }
-    It 'segna come Alto il client con codice iniettato e il canale di invio' {
+    It 'rates as High the client with injected code and the exfiltration channel' {
         $f = $script:Findings | Where-Object Title -like 'DiscordCanary*'
-        $f.Severity | Should -Be 'Alto'
+        $f.Severity | Should -Be 'High'
         $f.Reasons -join ' ' | Should -Match 'webhooks'
     }
-    It 'riconosce BetterDiscord come da verificare' {
+    It 'treats BetterDiscord as to review' {
         $f = $script:Findings | Where-Object Title -like 'DiscordPTB*'
-        $f.Severity | Should -Be 'Medio'
+        $f.Severity | Should -Be 'Medium'
         $f.Reasons -join ' ' | Should -Match 'BetterDiscord'
     }
 }
 
-Describe 'Wallet' {
-    It 'segna come Alto Exodus modificato dopo l''installazione e con un canale di invio' {
+Describe 'Wallets' {
+    It 'rates as High an Exodus changed after installation and with an exfiltration channel' {
         $f = $script:Findings | Where-Object Title -like 'Exodus*'
-        $f.Severity | Should -Be 'Alto'
-        $f.Reasons -join ' ' | Should -Match 'giorni dopo'
+        $f.Severity | Should -Be 'High'
+        $f.Reasons -join ' ' | Should -Match 'days after'
         $f.Reasons -join ' ' | Should -Match 'telegram'
     }
-    It 'non segnala Atomic Wallet integro' {
+    It 'does not flag an intact Atomic Wallet' {
         $script:Findings | Where-Object Title -like 'Atomic*' | Should -BeNullOrEmpty
     }
 }

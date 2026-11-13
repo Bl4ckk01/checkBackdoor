@@ -1,9 +1,9 @@
-; Installatore di CheckBackdoor (Inno Setup 6). Lo compila tools\Build-Release.ps1:
-;   ISCC.exe /DAppVersion=1.2.0 /DSourceDir=<app pubblicata> /DOutputDir=<dist> /DRootDir=<repository>
-; Installa in Program Files (servono i privilegi di amministratore): il motore viene
-; eseguito come amministratore, quindi i suoi file devono stare dove un programma
-; dell'utente non puo' modificarli. Report, backup e impostazioni stanno in
-; %LOCALAPPDATA%\CheckBackdoor e restano dopo la disinstallazione (servono per "Annulla").
+; CheckBackdoor installer (Inno Setup 6). Built by tools\Build-Release.ps1:
+;   ISCC.exe /DAppVersion=1.2.0 /DSourceDir=<published app> /DOutputDir=<dist> /DRootDir=<repository>
+; Installs to Program Files (administrator rights needed): the engine runs as
+; administrator, so its files must live where a user program cannot change them.
+; Reports, backups and settings live in %LOCALAPPDATA%\CheckBackdoor and stay after
+; uninstalling (Undo needs them).
 
 #ifndef AppVersion
   #define AppVersion "0.0.0"
@@ -16,8 +16,8 @@ AppVersion={#AppVersion}
 AppVerName=CheckBackdoor {#AppVersion}
 AppPublisher=The CheckBackdoor contributors
 DefaultDirName={autopf}\CheckBackdoor
-; Chi aveva la versione per utente in %LOCALAPPDATA% non deve restare li': quella cartella
-; la puo' modificare qualsiasi programma, e il motore viene poi eseguito come amministratore
+; Whoever had the per-user version in %LOCALAPPDATA% must not stay there: any program can
+; change that folder, and the engine then runs as administrator
 UsePreviousAppDir=no
 DisableProgramGroupPage=yes
 DisableDirPage=yes
@@ -35,7 +35,6 @@ UninstallDisplayName=CheckBackdoor
 LicenseFile={#RootDir}\LICENSE
 
 [Languages]
-Name: "italian"; MessagesFile: "compiler:Languages\Italian.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
@@ -52,5 +51,5 @@ Name: "{autodesktop}\CheckBackdoor"; Filename: "{app}\CheckBackdoor.exe"; Tasks:
 Filename: "{app}\CheckBackdoor.exe"; Description: "{cm:LaunchProgram,CheckBackdoor}"; Flags: nowait postinstall skipifsilent
 
 [UninstallRun]
-; La verifica programmata punta al programma installato: senza di esso non deve restare
-Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""\CheckBackdoor\Verifica settimanale"" /F"; Flags: runhidden; RunOnceId: "RimuoviVerificaProgrammata"
+; The scheduled scan points to the installed program: it must not stay behind without it
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""\CheckBackdoor\Weekly scan"" /F"; Flags: runhidden; RunOnceId: "RemoveScheduledScan"

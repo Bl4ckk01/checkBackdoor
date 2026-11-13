@@ -1,43 +1,43 @@
-# Esegue tutti i test a ogni push e pull request, con Windows PowerShell 5.1:
-# la stessa versione con cui CheckBackdoor gira sui PC degli utenti.
+# Runs all the tests on every push and pull request, with Windows PowerShell 5.1:
+# the same version CheckBackdoor runs with on users' PCs.
 name: Test
 
 on:
   push:
   pull_request:
 
-# Le action sono fissate al commit (il numero di versione e' nel commento): un tag come "v4"
-# puo' essere spostato su altro codice, un commit no.
+# Actions are pinned to a commit (the version number is in the comment): a tag like "v4"
+# can be moved to other code, a commit cannot.
 permissions:
   contents: read
 
 jobs:
-  motore:
+  engine:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
-      - name: Installa Pester
+      - name: Install Pester
         shell: powershell
         run: |
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
 
-      - name: Esegui i test
+      - name: Run the tests
         shell: powershell
         run: .\tests\Invoke-Tests.ps1 -CI
 
-      - name: Salva i risultati
+      - name: Save the results
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: risultati-test
+          name: test-results
           path: testResults.xml
           if-no-files-found: ignore
 
-  # L'app con interfaccia: compila e lancia una verifica vera senza finestra (--smoke),
-  # per controllare che app e motore si parlino davvero.
+  # The app with the interface: builds it and runs a real scan without a window (--smoke),
+  # to check that the app and the engine really talk to each other.
   app:
     runs-on: windows-latest
     timeout-minutes: 20
@@ -48,15 +48,15 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Compila
+      - name: Build
         shell: powershell
         run: dotnet build app\CheckBackdoor.App\CheckBackdoor.App.csproj -c Release
 
-      - name: Verifica di prova senza finestra
+      - name: Test scan without a window
         shell: powershell
         run: |
           $out = Join-Path $env:RUNNER_TEMP 'smoke'
           $exe = 'app\CheckBackdoor.App\bin\Release\net10.0-windows\CheckBackdoor.exe'
           $p = Start-Process -FilePath $exe -ArgumentList '--smoke', "`"$out`"" -Wait -PassThru
           Get-Content (Join-Path $out 'smoke.log')
-          if ($p.ExitCode -ne 0) { throw "Verifica di prova fallita (codice $($p.ExitCode))" }
+          if ($p.ExitCode -ne 0) { throw "Test scan failed (code $($p.ExitCode))" }

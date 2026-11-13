@@ -1,13 +1,13 @@
-# Supporto comune ai test: si carica con  . "$PSScriptRoot\TestHelpers.ps1"
-# (Invoke-Tests.ps1 fa partire i test da un percorso senza [ ], quindi va bene).
-# I moduli si caricano leggendone il testo, come fa CheckBackdoor.ps1.
+# Shared test support: load it with  . "$PSScriptRoot\TestHelpers.ps1"
+# (Invoke-Tests.ps1 starts the tests from a path without [ ], so this works).
+# Modules are loaded by reading their text, as CheckBackdoor.ps1 does.
 #
-# I campioni di comandi malevoli nei test sono innocui e composti a runtime: scritti per
-# intero (un download in Base64, certutil -urlcache) farebbero bloccare il file da AMSI.
+# The malicious command samples in the tests are harmless and assembled at runtime: written
+# out in full (a Base64 download, certutil -urlcache) they would get the file blocked by AMSI.
 
 $script:ProjectRoot = Split-Path -Parent $PSScriptRoot
 
-# Base64 di un comando innocuo, lungo quanto un payload vero
+# Base64 of a harmless command, as long as a real payload
 function New-HarmlessEncodedCommand {
     [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes('Write-Output "CheckBackdoor test"; Start-Sleep 0'))
 }
@@ -17,16 +17,12 @@ function Get-ModuleScript {
     [scriptblock]::Create([IO.File]::ReadAllText((Join-Path $script:ProjectRoot "modules\$Name.ps1")))
 }
 
-# Una segnalazione minima, con i campi che Add-Finding produce
+# A minimal finding, with the fields Add-Finding produces
 function New-TestFinding {
-    param([string]$Severity = 'Medio', [string]$Category = 'Avvio automatico', [string]$Title = 'Voce di prova', [string]$Path, [string]$Evidence, [string[]]$Reasons = @('Motivo di prova'), [string]$Sha256)
+    param([string]$Severity = 'Medium', [string]$Category = 'Autostart', [string]$Title = 'Test entry', [string]$Path, [string]$Evidence, [string[]]$Reasons = @('Test reason'), [string]$Sha256)
     [pscustomobject]@{
         Id = (Get-FindingId $Category $Title $Path $Evidence); Check = 'Test'
         Category = $Category; Severity = $Severity; Title = $Title; Detail = $null; Path = $Path; Evidence = $Evidence
-        Mitre = 'T1547.001'; Recommendation = 'Cosa fare di prova'; Reasons = $Reasons; Sha256 = $Sha256; Signer = $null; VirusTotal = $null
+        Mitre = 'T1547.001'; Recommendation = 'Test advice'; Reasons = $Reasons; Sha256 = $Sha256; Signer = $null; VirusTotal = $null
     }
 }
-
-# Caratteri accentati costruiti dal codice: i file di test restano ASCII, perche'
-# Windows PowerShell 5.1 legge i .ps1 senza BOM con la codifica ANSI.
-$script:Chr = @{ a = [string][char]0xE0; e = [string][char]0xE8; eAcute = [string][char]0xE9; EUpper = [string][char]0xC8; i = [string][char]0xEC; o = [string][char]0xF2; u = [string][char]0xF9 }

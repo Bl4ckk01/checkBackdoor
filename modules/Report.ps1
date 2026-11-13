@@ -1,10 +1,11 @@
-# Report: lista bianca, confronto con una scansione precedente, esportazione
-# JSON/CSV e pagina HTML leggibile.
+# Report: allowlist, comparison with a previous scan, JSON/CSV export and a
+# readable HTML page.
 
-$script:SeverityOrder = @{ 'Alto' = 0; 'Medio' = 1; 'Basso' = 2; 'Info' = 3 }
+$script:SeverityOrder = @{ 'High' = 0; 'Medium' = 1; 'Low' = 2; 'Info' = 3 }
+$script:ChangesCategory = 'Changes since the previous scan'
 
-# Applica la lista bianca a segnalazioni gia' raccolte. Durante una scansione la
-# lista si carica prima (Import-Allowlist) e Add-Finding scarta da solo.
+# Applies the allowlist to findings already collected. During a scan the list is
+# loaded first (Import-Allowlist) and Add-Finding drops matches by itself.
 function Invoke-Allowlist {
     param([string[]]$Path)
     Import-Allowlist -Path $Path
@@ -20,68 +21,68 @@ function Invoke-Allowlist {
 function Compare-WithPrevious {
     param([string]$PreviousJson)
     $prev = $null
-    try { $prev = [IO.File]::ReadAllText($PreviousJson) | ConvertFrom-Json } catch { Write-ScanWarning "Impossibile leggere $PreviousJson"; return }
-    # Le connessioni di rete cambiano di continuo: le escludiamo dal confronto
-    $noisy = { param($i) $i.Category -eq 'Rete' -and $i.Key -match '^(Listen|Established) \|' -or $i.Key -eq 'File eseguibili esaminati' }
-    $persistent = '^(Avvio automatico|Attivit|Servizi|Driver|WMI|Dirottamento COM|Modalita provvisoria|Account|Difese|Certificati|Browser|Iniezioni)'
+    try { $prev = [IO.File]::ReadAllText($PreviousJson) | ConvertFrom-Json } catch { Write-ScanWarning "Cannot read $PreviousJson"; return }
+    # Network connections change all the time: they are left out of the comparison
+    $noisy = { param($i) $i.Category -eq 'Network' -and $i.Key -match '^(Listen|Established) \|' -or $i.Key -eq 'Executable files examined' }
+    $persistent = '^(Autostart|Scheduled tasks|Services|Drivers|WMI|COM hijacking|Safe Mode|Accounts|Windows defenses|Certificates|Browsers|App injections)'
     $old = @{}; foreach ($i in $prev.Inventory) { if (-not (& $noisy $i)) { $old["$($i.Category)|$($i.Key)|$($i.Value)"] = $i } }
     $new = @{}; foreach ($i in $script:Inventory) { if (-not (& $noisy $i)) { $new["$($i.Category)|$($i.Key)|$($i.Value)"] = $i } }
-    $cat = 'Novita'' dalla scansione precedente'
+    $cat = $script:ChangesCategory
     foreach ($k in $new.Keys) {
         if ($old.ContainsKey($k)) { continue }
         $i = $new[$k]
-        $sev = 'Basso'; if ($i.Category -match $persistent) { $sev = 'Medio' }
-        Add-Finding -Category $cat -Severity $sev -Title "Nuovo ($($i.Category)): $($i.Key)" -Evidence $i.Value `
-            -Reasons "Non era presente nella scansione del $($prev.Meta.Date)." `
-            -Recommendation 'Se nel frattempo hai installato qualcosa (es. un gioco o un crack), questa e'' una delle modifiche che ha fatto al sistema.'
+        $sev = 'Low'; if ($i.Category -match $persistent) { $sev = 'Medium' }
+        Add-Finding -Category $cat -Severity $sev -Title "New ($($i.Category)): $($i.Key)" -Evidence $i.Value `
+            -Reasons "It was not there in the scan of $($prev.Meta.Date)." `
+            -Recommendation 'If you installed something in the meantime (for example a game or a crack), this is one of the changes it made to the system.'
     }
-    # Le categorie assenti ora (controllo saltato con -Skip) non contano come "rimosse"
+    # Categories missing now (check skipped with -Skip) do not count as "removed"
     $currentCats = @{}; foreach ($i in $new.Values) { $currentCats[$i.Category] = $true }
     foreach ($k in $old.Keys) {
         if ($new.ContainsKey($k)) { continue }
         $i = $old[$k]
         if (-not $currentCats.ContainsKey($i.Category)) { continue }
-        Add-Finding -Category $cat -Severity 'Info' -Title "Rimosso ($($i.Category)): $($i.Key)" -Evidence $i.Value -Reasons "Presente nella scansione del $($prev.Meta.Date), ora non piu'."
+        Add-Finding -Category $cat -Severity 'Info' -Title "Removed ($($i.Category)): $($i.Key)" -Evidence $i.Value -Reasons "It was there in the scan of $($prev.Meta.Date), not any more."
     }
 }
 
-# Aree mostrate nella "libreria" del report, nell'ordine in cui le legge l'utente,
-# con il controllo (-Skip) che le produce.
+# Areas shown in the report "library", in the order the user reads them,
+# with the check (-Skip) that produces them.
 $script:ReportAreas = @(
-    @{ Name = 'Difese di Windows'; Check = 'Security' }
-    @{ Name = 'Avvio automatico'; Check = 'Persistence' }
-    @{ Name = "Attivita' pianificate"; Check = 'ScheduledTasks' }
-    @{ Name = 'Servizi'; Check = 'Services' }
-    @{ Name = 'Driver'; Check = 'Services' }
+    @{ Name = 'Windows defenses'; Check = 'Security' }
+    @{ Name = 'Autostart'; Check = 'Persistence' }
+    @{ Name = 'Scheduled tasks'; Check = 'ScheduledTasks' }
+    @{ Name = 'Services'; Check = 'Services' }
+    @{ Name = 'Drivers'; Check = 'Services' }
     @{ Name = 'WMI'; Check = 'Wmi' }
-    @{ Name = 'Dirottamento COM'; Check = 'Persistence' }
-    @{ Name = 'Processi'; Check = 'Processes' }
-    @{ Name = 'Rete'; Check = 'Network' }
-    @{ Name = 'Browser'; Check = 'Browser' }
-    @{ Name = 'Iniezioni nelle app'; Check = 'Injections' }
-    @{ Name = 'Account e accesso remoto'; Check = 'Accounts' }
-    @{ Name = 'Certificati'; Check = 'Certificates' }
-    @{ Name = 'File sospetti'; Check = 'FileSystem' }
-    @{ Name = 'Linea temporale'; Check = 'Timeline' }
+    @{ Name = 'COM hijacking'; Check = 'Persistence' }
+    @{ Name = 'Processes'; Check = 'Processes' }
+    @{ Name = 'Network'; Check = 'Network' }
+    @{ Name = 'Browsers'; Check = 'Browser' }
+    @{ Name = 'App injections'; Check = 'Injections' }
+    @{ Name = 'Accounts and remote access'; Check = 'Accounts' }
+    @{ Name = 'Certificates'; Check = 'Certificates' }
+    @{ Name = 'Suspicious files'; Check = 'FileSystem' }
+    @{ Name = 'Timeline'; Check = 'Timeline' }
 )
 
-# Quanti elementi ha esaminato ogni area: le voci d'inventario, piu' i conteggi
-# che non finiscono in inventario (processi, file).
+# How many items each area examined: the inventory entries, plus the counts
+# that do not end up in the inventory (processes, files).
 function Get-ExaminedCounts {
     $c = @{}
     foreach ($i in $script:Inventory) {
         $cat = $i.Category
-        if ($cat -eq 'Modalita provvisoria') { $cat = 'Servizi' }
-        if ($i.Key -eq 'File eseguibili esaminati') { $c[$cat] = [int]$c[$cat] + [int]$i.Value; continue }
+        if ($cat -eq 'Safe Mode') { $cat = 'Services' }
+        if ($i.Key -eq 'Executable files examined') { $c[$cat] = [int]$c[$cat] + [int]$i.Value; continue }
         $c[$cat] = [int]$c[$cat] + 1
     }
-    if ($script:ProcessTable) { $c['Processi'] = $script:ProcessTable.Count }
-    if ($script:TimelineExamined) { $c['Linea temporale'] = $script:TimelineExamined }
+    if ($script:ProcessTable) { $c['Processes'] = $script:ProcessTable.Count }
+    if ($script:TimelineExamined) { $c['Timeline'] = $script:TimelineExamined }
     return $c
 }
 
 function Export-Results {
-    param([string]$OutputDir, [hashtable]$Meta, [string]$Prefix = 'scansione')
+    param([string]$OutputDir, [hashtable]$Meta, [string]$Prefix = 'scan')
     if (-not (Test-Path -LiteralPath $OutputDir)) { New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null }
     $stamp = Get-Date -Format 'yyyyMMdd_HHmmss'
     $base = Join-Path $OutputDir "$($Prefix)_$stamp"
@@ -92,7 +93,7 @@ function Export-Results {
 
     $timeline = $null
     if ($script:TimelineRan) { $timeline = @($script:Timeline | Sort-Object Time -Descending) }
-    # Cio' che la lista bianca ha nascosto resta nel report: una lista ritoccata non passa inosservata
+    # What the allowlist hid stays in the report: a tampered list does not go unnoticed
     $ignored = @($script:Ignored | Sort-Object { $script:SeverityOrder[$_.Severity] }, Category, Title)
     $json = [ordered]@{ Meta = $Meta; Findings = $sorted; Ignored = $ignored; Inventory = $script:Inventory; Timeline = $timeline } | ConvertTo-Json -Depth 6
     [IO.File]::WriteAllText("$base.json", $json, (New-Object Text.UTF8Encoding($false)))
@@ -105,36 +106,13 @@ function Export-Results {
     return "$base.html"
 }
 
-# Il codice e' scritto senza accenti (PowerShell 5.1 e la codifica dei file):
-# nel report il testo torna in italiano corretto ("e'" -> "è", "piu'" -> "più").
-$script:Accent = @{ a = [string][char]0xE0; e = [string][char]0xE8; eUpper = [string][char]0xC8; eAcute = [string][char]0xE9; i = [string][char]0xEC; o = [string][char]0xF2; u = [string][char]0xF9 }
-
-function ConvertTo-ItalianProse {
-    param([string]$Text)
-    if (-not $Text) { return $Text }
-    $end = "(?=[\s.,;:!?)""]|$)"
-    $t = $Text
-    $t = $t -replace "(?<=\b(?:[Pp]erch|[Pp]oich|[Aa]ffinch|[Bb]ench))e'$end", $script:Accent.eAcute
-    $t = $t -replace "(?<=\b[cC]')e'$end", $script:Accent.e
-    $t = $t -creplace "(?<=^|[\s(""])E'(?=\s)", $script:Accent.eUpper
-    $t = $t -creplace "(?<=^|[\s(""])e'(?=\s)", $script:Accent.e
-    $t = $t -replace "(?<=\p{L}\p{L})a'$end", $script:Accent.a
-    $t = $t -replace "(?<=\p{L}\p{L})e'$end", $script:Accent.e
-    $t = $t -replace "(?<=\p{L})i'$end", $script:Accent.i
-    $t = $t -replace "(?<=\p{L})o'$end", $script:Accent.o
-    $t = $t -replace "(?<=\p{L})u'$end", $script:Accent.u
-    return $t
-}
-
 function ConvertTo-HtmlText {
-    param($Text, [switch]$Prose)
+    param($Text)
     if ($null -eq $Text) { return '' }
-    $s = [string]$Text
-    if ($Prose) { $s = ConvertTo-ItalianProse $s }
-    return [Net.WebUtility]::HtmlEncode($s)
+    return [Net.WebUtility]::HtmlEncode([string]$Text)
 }
 
-# Icone disegnate a mano, un solo tratto da 1.5px, colore dal testo
+# Hand-drawn icons, a single 1.5px stroke, color from the text
 $script:Icons = @{
     Chevron = '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>'
     Search  = '<svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>'
@@ -154,7 +132,7 @@ $script:ReportCss = @'
   --ground:#f2f4f7;--surface:#fff;--raised:#f6f7f9;--active:#e8ebef;--border:#e3e6ea;--rule:#eceef1;--control:#cdd2d8;
   --text:#0b0c0d;--muted:#596069;--hue:#1d5fbf;--hue-ink:#fff;
   --neg:#c4242a;--warn:#b45309;--warn-ink:#92400e;
-  --p-alto-bg:#ffedea;--p-alto:#831c1e;--p-medio-bg:#fdf0dc;--p-medio:#7c3a06;--p-basso-bg:#eceef1;--p-basso:#3d434a;--p-info-bg:transparent;--p-info:#596069;
+  --p-high-bg:#ffedea;--p-high:#831c1e;--p-medium-bg:#fdf0dc;--p-medium:#7c3a06;--p-low-bg:#eceef1;--p-low:#3d434a;--p-info-bg:transparent;--p-info:#596069;
   --note-bg:#fffbeb;--note-line:#fde68a;--note-ink:#92400e;
   --radius:8px;--radius-c:6px;--gap:12px;
   --font:"Segoe UI Variable Text","Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
@@ -166,13 +144,13 @@ $script:ReportCss = @'
   --ground:#0c0d0e;--surface:#151618;--raised:#1c1d20;--active:#26282c;--border:#282a2e;--rule:#1f2124;--control:#3b3e43;
   --text:#f0f1f2;--muted:#a2a8af;--hue:#6f9dff;--hue-ink:#0b0c0d;
   --neg:#ff6b6b;--warn:#f0a43c;--warn-ink:#f5c27a;
-  --p-alto-bg:#3b191b;--p-alto:#ffb4b0;--p-medio-bg:#3a2810;--p-medio:#f5c27a;--p-basso-bg:#24262a;--p-basso:#c9cdd2;--p-info-bg:transparent;--p-info:#a2a8af;
+  --p-high-bg:#3b191b;--p-high:#ffb4b0;--p-medium-bg:#3a2810;--p-medium:#f5c27a;--p-low-bg:#24262a;--p-low:#c9cdd2;--p-info-bg:transparent;--p-info:#a2a8af;
   --note-bg:#241c0c;--note-line:#4a3815;--note-ink:#f5c27a;color-scheme:dark;}}
 :root[data-theme=dark]{
   --ground:#0c0d0e;--surface:#151618;--raised:#1c1d20;--active:#26282c;--border:#282a2e;--rule:#1f2124;--control:#3b3e43;
   --text:#f0f1f2;--muted:#a2a8af;--hue:#6f9dff;--hue-ink:#0b0c0d;
   --neg:#ff6b6b;--warn:#f0a43c;--warn-ink:#f5c27a;
-  --p-alto-bg:#3b191b;--p-alto:#ffb4b0;--p-medio-bg:#3a2810;--p-medio:#f5c27a;--p-basso-bg:#24262a;--p-basso:#c9cdd2;--p-info-bg:transparent;--p-info:#a2a8af;
+  --p-high-bg:#3b191b;--p-high:#ffb4b0;--p-medium-bg:#3a2810;--p-medium:#f5c27a;--p-low-bg:#24262a;--p-low:#c9cdd2;--p-info-bg:transparent;--p-info:#a2a8af;
   --note-bg:#241c0c;--note-line:#4a3815;--note-ink:#f5c27a;color-scheme:dark;}
 *,*::before,*::after{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%;scrollbar-color:var(--control) transparent;accent-color:var(--hue)}
@@ -187,7 +165,7 @@ h1,h2,h3{margin:0;font-weight:600}
 .ico-s{width:12px;height:12px}
 code,.mono{font-family:var(--mono);font-size:12.5px;line-height:18px}
 
-/* Barra superiore */
+/* Top bar */
 .bar{border-bottom:1px solid var(--border);background:var(--ground)}
 .embedded .bar{display:none}
 .bar-in{max-width:1136px;margin:0 auto;height:48px;padding:0 24px;display:flex;align-items:center;gap:16px}
@@ -202,7 +180,7 @@ code,.mono{font-family:var(--mono);font-size:12.5px;line-height:18px}
 :root[data-theme=dark] .i-sun{display:block}:root[data-theme=dark] .i-moon{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .i-sun{display:block}:root:not([data-theme=light]) .i-moon{display:none}}
 
-/* Pagina */
+/* Page */
 .page{max-width:1136px;margin:0 auto;padding:32px 24px 48px}
 .title-row{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}
 h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
@@ -215,7 +193,7 @@ h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
 .note ul{margin:4px 0 0;padding-left:18px}
 .note-info{background:var(--surface);border-color:var(--border);color:var(--text)}
 
-/* Verifica: il verdetto e la barra completata */
+/* Check: the verdict and the completed bar */
 .verify{margin-top:24px;padding:24px 24px 20px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius)}
 .verify-top{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
 .verdict{font:600 30px/36px var(--font-d);letter-spacing:-.015em}
@@ -224,14 +202,14 @@ h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
 .verdict-text{margin:8px 0 0;max-width:72ch;color:var(--text)}
 .meter{display:flex;gap:2px;height:8px;margin-top:20px;border-radius:999px;overflow:hidden;transform-origin:left center;animation:fill .9s cubic-bezier(.16,1,.3,1) both}
 .meter span{display:block;min-width:4px}
-.m-ok{background:var(--hue)}.m-alto{background:var(--neg)}.m-medio{background:var(--warn)}
+.m-ok{background:var(--hue)}.m-high{background:var(--neg)}.m-medium{background:var(--warn)}
 .meter-legend{display:flex;flex-wrap:wrap;gap:4px 20px;margin:10px 0 0;color:var(--muted);font-size:13px}
 .meter-legend b{color:var(--text);font-weight:600}
 .dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px}
-.d-ok{background:var(--hue)}.d-alto{background:var(--neg)}.d-medio{background:var(--warn)}
+.d-ok{background:var(--hue)}.d-high{background:var(--neg)}.d-medium{background:var(--warn)}
 @keyframes fill{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 
-/* Gravita': un contenitore diviso, ogni cella e' anche un filtro */
+/* Severity: one split container, every cell is also a filter */
 .sev{display:grid;grid-template-columns:repeat(4,1fr);margin-top:var(--gap);background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
 .sev-c{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:12px 16px 14px;border:0;border-left:1px solid var(--rule);background:transparent;text-align:left;cursor:default;position:relative}
 .sev-c:first-child{border-left:0}
@@ -245,12 +223,12 @@ h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
 .sev-c[aria-pressed=false] .sev-box rect{fill:none;stroke:var(--control)}
 .sev-c[aria-pressed=false] .sev-box .sev-tick{display:none}
 .sev-n{font:600 24px/30px var(--font-d)}
-.sev-n.is-alto{color:var(--neg)}.sev-n.is-medio{color:var(--warn-ink)}
+.sev-n.is-high{color:var(--neg)}.sev-n.is-medium{color:var(--warn-ink)}
 .sev-off{display:none;color:var(--muted)}
 .js .sev-c[aria-pressed=false] .sev-n{color:var(--muted);font-weight:400}
 .js .sev-c[aria-pressed=false] .sev-off{display:inline}
 
-/* Libreria delle aree + segnalazioni */
+/* Area library + findings */
 .work{display:grid;grid-template-columns:264px minmax(0,1fr);gap:var(--gap);align-items:start;margin-top:var(--gap)}
 .lib{position:sticky;top:16px;padding:6px 0 0}
 .lib-h{font-size:12px;line-height:16px;font-weight:400;color:var(--muted);padding:0 8px 8px}
@@ -262,7 +240,7 @@ h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
 .a-name{font-weight:500;overflow-wrap:anywhere}
 .a-meta{grid-column:1;font-size:12px;line-height:16px;color:var(--muted)}
 .a-state{grid-column:2;grid-row:1/span 2;display:inline-flex;align-items:center;gap:4px;font-size:12px;color:var(--muted);white-space:nowrap}
-.a-state.s-alto{color:var(--neg);font-weight:600}.a-state.s-medio{color:var(--warn-ink);font-weight:600}
+.a-state.s-high{color:var(--neg);font-weight:600}.a-state.s-medium{color:var(--warn-ink);font-weight:600}
 .a-state.s-off{font-style:italic}
 
 .list{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);min-width:0}
@@ -283,9 +261,9 @@ h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
 .row>summary .ico{margin-top:2px;color:var(--muted);transition:transform .2s cubic-bezier(.16,1,.3,1)}
 .row[open]>summary .ico{transform:rotate(180deg)}
 .pill{display:inline-flex;align-items:center;justify-content:center;height:22px;padding:0 8px;border-radius:4px;font-size:12px;font-weight:500;white-space:nowrap;flex:none;justify-self:start}
-.p-Alto{background:var(--p-alto-bg);color:var(--p-alto)}
-.p-Medio{background:var(--p-medio-bg);color:var(--p-medio)}
-.p-Basso{background:var(--p-basso-bg);color:var(--p-basso)}
+.p-High{background:var(--p-high-bg);color:var(--p-high)}
+.p-Medium{background:var(--p-medium-bg);color:var(--p-medium)}
+.p-Low{background:var(--p-low-bg);color:var(--p-low)}
 .p-Info{background:var(--p-info-bg);color:var(--p-info);border:1px solid var(--border)}
 .r-title{display:block;font-weight:600;overflow-wrap:anywhere}
 .r-sub{display:block;margin-top:2px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -312,7 +290,7 @@ h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
 .link:hover{color:var(--hue)}
 .empty button{margin-left:8px;border:0;background:none;color:var(--hue);cursor:pointer;text-decoration:underline;text-underline-offset:3px}
 
-/* Guida finale */
+/* Closing guide */
 .guide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:48px;margin-top:48px;padding-top:32px;border-top:1px solid var(--border)}
 .guide h2{font-size:16px;line-height:24px;margin-bottom:8px}
 .guide ol{margin:0;padding-left:20px}
@@ -433,13 +411,13 @@ $script:ReportJs = @'
       : window.matchMedia('(prefers-color-scheme: dark)').matches;
     var next = dark ? 'light' : 'dark';
     root.setAttribute('data-theme', next);
-    theme.setAttribute('aria-label', next === 'dark' ? 'Passa al tema chiaro' : 'Passa al tema scuro');
+    theme.setAttribute('aria-label', next === 'dark' ? 'Switch to light theme' : 'Switch to dark theme');
     try { localStorage.setItem('checkbackdoor-theme', next); } catch (e) {}
   });
   apply();
 
-  // Dentro l'app: i pulsanti delle azioni chiedono all'app di eseguirle, e l'app risponde
-  // con l'esito. Solo verso la pagina dell'app, e solo i messaggi che arrivano da li'.
+  // Inside the app: the action buttons ask the app to run them, and the app replies
+  // with the outcome. Only towards the app page, and only messages coming from there.
   var APP = 'https://app.checkbackdoor.example';
   if (window.parent !== window) {
     d.addEventListener('click', function (e) {
@@ -459,14 +437,14 @@ $script:ReportJs = @'
 })();
 '@
 
-# Dentro l'app il report e' in un iframe: niente barra propria, tema passato nell'indirizzo (#theme=dark)
+# Inside the app the report is in an iframe: no own bar, theme passed in the address (#theme=dark)
 $script:ReportHeadJs = @'
 var r=document.documentElement;r.className='js'+(window.self!==window.top?' embedded':'');try{var m=location.hash.match(/theme=(dark|light)/),t=m?m[1]:localStorage.getItem('checkbackdoor-theme');if(t==='dark'||t==='light')r.setAttribute('data-theme',t)}catch(e){}
 '@
 
-# Impronta di uno script per la Content-Security-Policy del report: il browser esegue solo
-# gli script con queste impronte. Il testo del report e' gia' trasformato in testo semplice;
-# questa e' la seconda barriera, se un giorno sfuggisse un nome scelto da un attaccante.
+# Hash of a script for the report's Content-Security-Policy: the browser runs only the
+# scripts with these hashes. The report text is already turned into plain text;
+# this is the second barrier, should a name chosen by an attacker ever slip through.
 function Get-CspScriptHash {
     param([string]$Script)
     $sha = [Security.Cryptography.SHA256]::Create()
@@ -476,121 +454,121 @@ function Get-CspScriptHash {
 function New-HtmlReport {
     param($Findings, [hashtable]$Meta, $Timeline, $Ignored)
     $e = { param($t) ConvertTo-HtmlText $t }
-    $p = { param($t) ConvertTo-HtmlText $t -Prose }
     $Findings = @($Findings)
-    $counts = @{ Alto = 0; Medio = 0; Basso = 0; Info = 0 }
+    $counts = @{ High = 0; Medium = 0; Low = 0; Info = 0 }
     foreach ($f in $Findings) { $counts[$f.Severity]++ }
 
     $examined = @{}; if ($Meta.Examined) { $examined = $Meta.Examined }
     $total = 0; foreach ($v in $examined.Values) { $total += [int]$v }
-    $flagged = $counts.Alto + $counts.Medio
+    $flagged = $counts.High + $counts.Medium
     $okCount = [Math]::Max($total - $flagged, 0)
-    $fmt = { param($n) ([int]$n).ToString('N0', [Globalization.CultureInfo]'it-IT') }
+    $fmt = { param($n) ([int]$n).ToString('N0', [Globalization.CultureInfo]::InvariantCulture) }
+    $items = { param($n) if ([int]$n -eq 1) { '1 item' } else { "$(& $fmt $n) items" } }
 
     $fileMode = $Meta.Mode -eq 'File'
     $target = if ($fileMode -and $Meta.Target) { Split-Path -Leaf ([string]$Meta.Target) } else { $null }
     if ($fileMode) {
-        # Controllo di un file: la domanda e' "posso aprirlo?"
-        if ($counts.Alto -gt 0) {
-            $verdict = if ($total -le 1) { 'Non aprire questo file' } else { "$($counts.Alto) file da non aprire" }
-            $verdictText = 'Il file ha caratteristiche tipiche dei malware: firma manomessa, nome ingannevole, trucchi per sfuggire agli antivirus o DLL di sistema sostituite. Verificalo su VirusTotal prima di qualsiasi altra cosa.'
-        } elseif ($counts.Medio -gt 0) {
-            $verdict = 'Da verificare prima di aprirlo'
-            $verdictText = 'Nessun segnale forte, ma qualcosa merita un controllo: leggi i motivi qui sotto e verifica il file su VirusTotal.'
+        # Checking a file: the question is "can I open it?"
+        if ($counts.High -gt 0) {
+            $verdict = if ($total -le 1) { 'Do not open this file' } else { "$($counts.High) files not to open" }
+            $verdictText = 'The file has traits typical of malware: a tampered signature, a misleading name, tricks to slip past antivirus software or replaced system DLLs. Check it on VirusTotal before anything else.'
+        } elseif ($counts.Medium -gt 0) {
+            $verdict = 'Check it before opening it'
+            $verdictText = 'No strong signal, but something deserves a look: read the reasons below and check the file on VirusTotal.'
         } else {
-            $verdict = if ($total -le 1) { 'Nessun indizio nel file' } else { 'Nessun indizio nei file controllati' }
-            $verdictText = 'La struttura del file non mostra i trucchi tipici dei malware. Non e'' una garanzia: un file ben confezionato puo'' sembrare pulito. Se viene da una fonte non ufficiale, verificalo anche su VirusTotal.'
+            $verdict = if ($total -le 1) { 'No clues in the file' } else { 'No clues in the checked files' }
+            $verdictText = 'The structure of the file shows none of the usual malware tricks. It is not a guarantee: a well-made file can look clean. If it comes from an unofficial source, check it on VirusTotal too.'
         }
-    } elseif ($counts.Alto -gt 0) {
-        $verdict = if ($counts.Alto -eq 1) { 'Un indizio ad alto rischio da controllare subito' } else { "$($counts.Alto) indizi ad alto rischio da controllare subito" }
-        $verdictText = 'Questi elementi corrispondono a tecniche usate da backdoor e malware. Non sono per forza infezioni, ma vanno verificati uno per uno, a partire dalle voci rosse.'
-    } elseif ($counts.Medio -gt 0) {
-        $verdict = "Nessun indizio grave, $($counts.Medio) $(if ($counts.Medio -eq 1) { 'elemento' } else { 'elementi' }) da verificare"
-        $verdictText = 'Non ci sono segnali forti di compromissione. Gli elementi da verificare sono spesso software legittimo: controlla di riconoscerli uno per uno.'
+    } elseif ($counts.High -gt 0) {
+        $verdict = if ($counts.High -eq 1) { 'One high-risk clue to check now' } else { "$($counts.High) high-risk clues to check now" }
+        $verdictText = 'These items match techniques used by backdoors and malware. They are not necessarily infections, but check them one by one, starting with the red ones.'
+    } elseif ($counts.Medium -gt 0) {
+        $verdict = "No serious clues, $($counts.Medium) $(if ($counts.Medium -eq 1) { 'item' } else { 'items' }) to review"
+        $verdictText = 'There are no strong signs of compromise. Items to review are often legitimate software: make sure you recognize each one.'
     } else {
-        $verdict = 'Nessun indizio di backdoor'
-        $verdictText = 'Tutte le aree hanno superato la verifica. Riduce molto il rischio, ma nessuno strumento puo'' garantirlo al 100%: leggi i limiti in fondo alla pagina.'
+        $verdict = 'No signs of a backdoor'
+        $verdictText = 'Every area passed the check. This lowers the risk a lot, but no tool can guarantee it 100%: read the limits at the bottom of the page.'
     }
 
     $sb = New-Object Text.StringBuilder
     $add = { param($s) [void]$sb.Append($s) }
 
-    $title = if ($fileMode) { "Controllo di $target" } else { "Verifica di $($Meta.Computer)" }
-    # Il browser legge i ritorni a capo come LF: le impronte si calcolano sullo stesso testo
+    $title = if ($fileMode) { "Check of $target" } else { "Scan of $($Meta.Computer)" }
+    # The browser reads line breaks as LF: hashes are computed on the same text
     $headJs = $script:ReportHeadJs -replace "`r`n", "`n"
     $bodyJs = $script:ReportJs -replace "`r`n", "`n"
     $csp = "default-src 'none'; script-src $(Get-CspScriptHash $headJs) $(Get-CspScriptHash $bodyJs); style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'"
-    & $add "<!doctype html>`n<html lang=""it""><head><meta charset=""utf-8""><meta http-equiv=""Content-Security-Policy"" content=""$csp"">"
+    & $add "<!doctype html>`n<html lang=""en""><head><meta charset=""utf-8""><meta http-equiv=""Content-Security-Policy"" content=""$csp"">"
     & $add "<meta name=""viewport"" content=""width=device-width,initial-scale=1"">"
     & $add "<meta name=""color-scheme"" content=""light dark""><meta name=""referrer"" content=""no-referrer"">"
     & $add "<title>$(& $e $title) - CheckBackdoor</title>"
     & $add "<script>$headJs</script>"
     & $add "<style>$script:ReportCss</style></head><body>"
 
-    # Barra superiore: prodotto, PC esaminato, tema
+    # Top bar: product, scanned PC, theme
     & $add "<header class=""bar""><div class=""bar-in""><span class=""mark"">$($script:Icons.Mark)CheckBackdoor</span>"
     & $add "<span class=""bar-scope"">$(& $e $Meta.Computer) &middot; $(& $e $Meta.User)</span>"
-    & $add "<button class=""theme"" type=""button"" aria-label=""Cambia tema"">$($script:Icons.Moon)$($script:Icons.Sun)</button></div></header>"
+    & $add "<button class=""theme"" type=""button"" aria-label=""Change theme"">$($script:Icons.Moon)$($script:Icons.Sun)</button></div></header>"
 
-    # Titolo e file collegati
-    $subParts = if ($fileMode) { @("Controllato prima dell'apertura il $($Meta.Date)", [string]$Meta.Target) } else { @("Scansione del $($Meta.Date)") }
+    # Title and linked files
+    $subParts = if ($fileMode) { @("Checked before opening on $($Meta.Date)", [string]$Meta.Target) } else { @("Scan of $($Meta.Date)") }
     if ($Meta.OS) { $subParts += $Meta.OS }
-    if ($Meta.Deep) { $subParts += 'scansione approfondita' }
+    if ($Meta.Deep) { $subParts += 'deep scan' }
     & $add "<main class=""page""><div class=""title-row""><div><h1>$(& $e $title)</h1><p class=""sub"">$(($subParts | ForEach-Object { & $e $_ }) -join ' &middot; ')</p></div>"
     if ($Meta.Files) {
-        & $add "<div class=""actions""><a class=""btn"" href=""$(& $e $Meta.Files.Json)"">$($script:Icons.File)Dati JSON</a><a class=""btn"" href=""$(& $e $Meta.Files.Csv)"">$($script:Icons.File)Tabella CSV</a></div>"
+        & $add "<div class=""actions""><a class=""btn"" href=""$(& $e $Meta.Files.Json)"">$($script:Icons.File)JSON data</a><a class=""btn"" href=""$(& $e $Meta.Files.Csv)"">$($script:Icons.File)CSV table</a></div>"
     }
     & $add '</div>'
 
     if (-not $Meta.Admin -and -not $fileMode) {
-        & $add "<p class=""note""><b>Controlli incompleti:</b> la scansione non &egrave; stata eseguita come amministratore, quindi esclusioni di Defender, sottoscrizioni WMI e alcuni processi di sistema non sono stati letti. Avviala con Avvia-Scansione.bat e accetta la richiesta di privilegi.</p>"
+        & $add "<p class=""note""><b>Incomplete checks:</b> the scan did not run as administrator, so Defender exclusions, WMI subscriptions and some system processes were not read. Start it with Start-Scan.bat and accept the elevation prompt.</p>"
     }
     if ($Meta.Errors) {
-        & $add '<div class="note"><b>Alcuni controlli non sono stati completati:</b><ul>'
+        & $add '<div class="note"><b>Some checks did not complete:</b><ul>'
         foreach ($err in $Meta.Errors) { & $add "<li>$(& $e $err)</li>" }
         & $add '</ul></div>'
     }
     if ($Meta.ComparedTo) {
         $prevName = [IO.Path]::GetFileName([string]$Meta.ComparedTo)
-        & $add "<p class=""note note-info"">Confrontata con la scansione precedente <code>$(& $e $prevName)</code>: le differenze sono nell'area <button class=""link"" type=""button"" data-goto=""$(& $e "Novita' dalla scansione precedente")"">Novit&agrave; dalla scansione precedente</button>.</p>"
+        & $add "<p class=""note note-info"">Compared with the previous scan <code>$(& $e $prevName)</code>: the differences are in the area <button class=""link"" type=""button"" data-goto=""$(& $e $script:ChangesCategory)"">$(& $e $script:ChangesCategory)</button>.</p>"
     }
 
-    # La verifica completata: verdetto e barra
-    $unit = if ($fileMode) { 'file controllati' } else { 'elementi verificati' }
-    $meterLabel = "$(& $fmt $total) $($unit): $($counts.Alto) a rischio alto, $($counts.Medio) da verificare"
-    & $add "<section class=""verify"" aria-labelledby=""verdict""><div class=""verify-top""><h2 id=""verdict"" class=""verdict"">$(& $p $verdict)</h2>"
-    & $add "<span class=""done"">$($script:Icons.Check)$(if ($fileMode) { 'Controllo' } else { 'Verifica' }) completat$(if ($fileMode) { 'o' } else { 'a' }) in $(& $e $Meta.Duration)</span></div>"
-    & $add "<p class=""verdict-text"">$(& $p $verdictText)</p>"
+    # The completed check: verdict and bar
+    $unit = if ($fileMode) { 'files checked' } else { 'items checked' }
+    $meterLabel = "$(& $fmt $total) $($unit): $($counts.High) high risk, $($counts.Medium) to review"
+    & $add "<section class=""verify"" aria-labelledby=""verdict""><div class=""verify-top""><h2 id=""verdict"" class=""verdict"">$(& $e $verdict)</h2>"
+    & $add "<span class=""done"">$($script:Icons.Check)$(if ($fileMode) { 'Check' } else { 'Scan' }) completed in $(& $e $Meta.Duration)</span></div>"
+    & $add "<p class=""verdict-text"">$(& $e $verdictText)</p>"
     & $add "<div class=""meter"" role=""img"" aria-label=""$(& $e $meterLabel)""><span class=""m-ok"" style=""flex-grow:$okCount""></span>"
-    if ($counts.Medio) { & $add "<span class=""m-medio"" style=""flex-grow:$($counts.Medio)""></span>" }
-    if ($counts.Alto) { & $add "<span class=""m-alto"" style=""flex-grow:$($counts.Alto)""></span>" }
+    if ($counts.Medium) { & $add "<span class=""m-medium"" style=""flex-grow:$($counts.Medium)""></span>" }
+    if ($counts.High) { & $add "<span class=""m-high"" style=""flex-grow:$($counts.High)""></span>" }
     & $add '</div><p class="meter-legend">'
-    & $add "<span><span class=""dot d-ok""></span><b>$(& $fmt $okCount)</b> superati, su $(& $fmt $total) $unit</span>"
-    & $add "<span><span class=""dot d-medio""></span><b>$($counts.Medio)</b> da verificare</span>"
-    & $add "<span><span class=""dot d-alto""></span><b>$($counts.Alto)</b> a rischio alto</span></p></section>"
+    & $add "<span><span class=""dot d-ok""></span><b>$(& $fmt $okCount)</b> passed, out of $(& $fmt $total) $unit</span>"
+    & $add "<span><span class=""dot d-medium""></span><b>$($counts.Medium)</b> to review</span>"
+    & $add "<span><span class=""dot d-high""></span><b>$($counts.High)</b> high risk</span></p></section>"
 
-    # Gravita' come filtri
+    # Severity as filters
     $sevDef = @(
-        @{ S = 'Alto'; L = 'Rischio alto'; C = 'is-alto' }, @{ S = 'Medio'; L = 'Da verificare'; C = 'is-medio' },
-        @{ S = 'Basso'; L = 'Rischio basso'; C = '' }, @{ S = 'Info'; L = 'Informazioni'; C = '' }
+        @{ S = 'High'; L = 'High risk'; C = 'is-high' }, @{ S = 'Medium'; L = 'To review'; C = 'is-medium' },
+        @{ S = 'Low'; L = 'Low risk'; C = '' }, @{ S = 'Info'; L = 'Information'; C = '' }
     )
-    & $add '<div class="sev" role="group" aria-label="Mostra le segnalazioni per gravit&agrave;">'
+    & $add '<div class="sev" role="group" aria-label="Show findings by severity">'
     foreach ($s in $sevDef) {
         $n = $counts[$s.S]
         $cls = 'sev-n'; if ($n -gt 0 -and $s.C) { $cls += " $($s.C)" }
-        # Nel controllo di un file anche "nessun indizio" (Info) e' una risposta: si vede subito
+        # When checking a file, "no clues" (Info) is an answer too: it shows right away
         $pressed = if ($s.S -eq 'Info' -and -not $fileMode) { 'false' } else { 'true' }
-        & $add "<button class=""sev-c"" type=""button"" data-sev=""$($s.S)"" aria-pressed=""$pressed""><span class=""sev-l"">$($script:Icons.Box)$($s.L)<span class=""sev-off"">&middot; nascoste</span></span><span class=""$cls"">$n</span></button>"
+        & $add "<button class=""sev-c"" type=""button"" data-sev=""$($s.S)"" aria-pressed=""$pressed""><span class=""sev-l"">$($script:Icons.Box)$($s.L)<span class=""sev-off"">&middot; hidden</span></span><span class=""$cls"">$n</span></button>"
     }
     & $add '</div>'
 
-    # Libreria delle aree
+    # Area library
     $skipped = @($Meta.Skipped)
     $shown = @($Findings | Where-Object { $fileMode -or $_.Severity -ne 'Info' }).Count
-    & $add "<div class=""work""><nav class=""lib"" aria-label=""Aree verificate""><h2 class=""lib-h"">Aree verificate</h2><ul>"
-    & $add "<li><button class=""area"" type=""button"" data-area="""" aria-pressed=""true""><span class=""a-name"">Tutte le aree</span><span class=""a-meta"">$(if ($total -eq 1) { '1 elemento' } else { "$(& $fmt $total) elementi" })</span><span class=""a-state""><span data-all-count>$shown</span>segnalazioni</span></button></li>"
+    & $add "<div class=""work""><nav class=""lib"" aria-label=""Areas checked""><h2 class=""lib-h"">Areas checked</h2><ul>"
+    & $add "<li><button class=""area"" type=""button"" data-area="""" aria-pressed=""true""><span class=""a-name"">All areas</span><span class=""a-meta"">$(& $items $total)</span><span class=""a-state""><span data-all-count>$shown</span>findings</span></button></li>"
     if ($fileMode) {
-        $areaList = @(@{ Name = 'File analizzato'; Check = 'File' })
+        $areaList = @(@{ Name = 'Checked file'; Check = 'File' })
     } else {
         $areaNames = @($script:ReportAreas | ForEach-Object { $_.Name })
         $extraAreas = @($Findings | Select-Object -ExpandProperty Category -Unique | Where-Object { $_ -notin $areaNames })
@@ -598,44 +576,44 @@ function New-HtmlReport {
     }
     foreach ($a in $areaList) {
         $af = @($Findings | Where-Object { $_.Category -eq $a.Name })
-        $na = @($af | Where-Object Severity -eq 'Alto').Count
-        $nm = @($af | Where-Object Severity -eq 'Medio').Count
+        $nh = @($af | Where-Object Severity -eq 'High').Count
+        $nm = @($af | Where-Object Severity -eq 'Medium').Count
         $isSkipped = $a.Check -and ($skipped -contains $a.Check)
-        if ($isSkipped) { $state = '<span class="a-state s-off">Non eseguito</span>' }
-        elseif ($na) { $state = "<span class=""a-state s-alto"">$($script:Icons.Risk)$na a rischio</span>" }
-        elseif ($nm) { $state = "<span class=""a-state s-medio"">$($script:Icons.Review)$nm da verificare</span>" }
-        else { $state = "<span class=""a-state"">$($script:Icons.Check)Verificato</span>" }
+        if ($isSkipped) { $state = '<span class="a-state s-off">Not run</span>' }
+        elseif ($nh) { $state = "<span class=""a-state s-high"">$($script:Icons.Risk)$nh at risk</span>" }
+        elseif ($nm) { $state = "<span class=""a-state s-medium"">$($script:Icons.Review)$nm to review</span>" }
+        else { $state = "<span class=""a-state"">$($script:Icons.Check)Checked</span>" }
         $n = [int]$examined[$a.Name]
-        $areaInfo = if (-not $a.Check) { "$($af.Count) differenze" } elseif ($n -eq 1) { '1 elemento' } else { "$(& $fmt $n) elementi" }
-        & $add "<li><button class=""area"" type=""button"" data-area=""$(& $e $a.Name)"" aria-pressed=""false""><span class=""a-name"">$(& $p $a.Name)</span><span class=""a-meta"">$areaInfo</span>$state</button></li>"
+        $areaInfo = if (-not $a.Check) { "$($af.Count) $(if ($af.Count -eq 1) { 'difference' } else { 'differences' })" } else { & $items $n }
+        & $add "<li><button class=""area"" type=""button"" data-area=""$(& $e $a.Name)"" aria-pressed=""false""><span class=""a-name"">$(& $e $a.Name)</span><span class=""a-meta"">$areaInfo</span>$state</button></li>"
     }
     & $add '</ul></nav>'
 
-    # Segnalazioni
-    & $add "<section class=""list"" aria-labelledby=""list-h""><div class=""list-head""><h2 id=""list-h"">Segnalazioni<span class=""count"" data-count>$shown</span></h2>"
-    & $add "<label class=""search"">$($script:Icons.Search)<input type=""search"" placeholder=""Cerca file, programma o tecnica"" aria-label=""Cerca nelle segnalazioni""></label></div><div class=""rows"">"
+    # Findings
+    & $add "<section class=""list"" aria-labelledby=""list-h""><div class=""list-head""><h2 id=""list-h"">Findings<span class=""count"" data-count>$shown</span></h2>"
+    & $add "<label class=""search"">$($script:Icons.Search)<input type=""search"" placeholder=""Search file, program or technique"" aria-label=""Search the findings""></label></div><div class=""rows"">"
     foreach ($f in $Findings) {
         $text = (@($f.Title, $f.Path, $f.Evidence, $f.Category, $f.Mitre, $f.Signer) + @($f.Reasons) | Where-Object { $_ }) -join ' '
         $first = @($f.Reasons | Where-Object { $_ } | Select-Object -First 1)
-        $subline = (ConvertTo-ItalianProse $f.Category)
-        if ($first) { $subline += " - $(ConvertTo-ItalianProse $first[0])" }
-        $open = ''; if ($f.Severity -eq 'Alto') { $open = ' open' }
-        $label = @{ Alto = 'Alto'; Medio = 'Da verificare'; Basso = 'Basso'; Info = 'Info' }[$f.Severity]
+        $subline = [string]$f.Category
+        if ($first) { $subline += " - $($first[0])" }
+        $open = ''; if ($f.Severity -eq 'High') { $open = ' open' }
+        $label = @{ High = 'High'; Medium = 'Review'; Low = 'Low'; Info = 'Info' }[$f.Severity]
         & $add "<details class=""row"" id=""f-$(& $e $f.Id)"" data-sev=""$($f.Severity)"" data-area=""$(& $e $f.Category)"" data-text=""$(& $e $text.ToLowerInvariant())""$open>"
-        & $add "<summary><span class=""pill p-$($f.Severity)"">$label</span><span class=""r-main""><span class=""r-title"">$(& $p $f.Title)</span><span class=""r-sub"">$(& $e $subline)</span></span>$($script:Icons.Chevron)</summary><div class=""r-body"">"
+        & $add "<summary><span class=""pill p-$($f.Severity)"">$label</span><span class=""r-main""><span class=""r-title"">$(& $e $f.Title)</span><span class=""r-sub"">$(& $e $subline)</span></span>$($script:Icons.Chevron)</summary><div class=""r-body"">"
         if ($f.Reasons) {
             & $add '<ul class="reasons">'
-            foreach ($r in $f.Reasons) { if ($r) { & $add "<li>$(& $p $r)</li>" } }
+            foreach ($r in $f.Reasons) { if ($r) { & $add "<li>$(& $e $r)</li>" } }
             & $add '</ul>'
         }
         & $add '<dl class="kv">'
         if ($f.Path) { & $add "<dt>File</dt><dd><code>$(& $e $f.Path)</code></dd>" }
-        if ($f.Evidence) { & $add "<dt>Dettaglio</dt><dd><code>$(& $e $f.Evidence)</code></dd>" }
-        if ($f.Detail) { & $add "<dt>Posizione</dt><dd>$(& $p $f.Detail)</dd>" }
-        if ($f.Signer) { & $add "<dt>Firmato da</dt><dd>$(& $e $f.Signer)</dd>" }
+        if ($f.Evidence) { & $add "<dt>Detail</dt><dd><code>$(& $e $f.Evidence)</code></dd>" }
+        if ($f.Detail) { & $add "<dt>Location</dt><dd>$(& $e $f.Detail)</dd>" }
+        if ($f.Signer) { & $add "<dt>Signed by</dt><dd>$(& $e $f.Signer)</dd>" }
         if ($f.Sha256) {
             $vt = "https://www.virustotal.com/gui/file/$($f.Sha256)"
-            & $add "<dt>SHA-256</dt><dd><code>$($f.Sha256)</code><br><a href=""$vt"" target=""_blank"" rel=""noopener noreferrer"">Cerca su VirusTotal$($script:Icons.Out)</a></dd>"
+            & $add "<dt>SHA-256</dt><dd><code>$($f.Sha256)</code><br><a href=""$vt"" target=""_blank"" rel=""noopener noreferrer"">Look up on VirusTotal$($script:Icons.Out)</a></dd>"
         }
         if ($f.Mitre) {
             $links = foreach ($m in ($f.Mitre -split '\s*/\s*')) {
@@ -644,83 +622,83 @@ function New-HtmlReport {
                     "<a href=""$url"" target=""_blank"" rel=""noopener noreferrer"">$m$($script:Icons.Out)</a>"
                 } else { & $e $m }
             }
-            & $add "<dt>Tecnica</dt><dd>MITRE ATT&amp;CK $($links -join ' / ')</dd>"
+            & $add "<dt>Technique</dt><dd>MITRE ATT&amp;CK $($links -join ' / ')</dd>"
         }
         & $add '</dl>'
-        if ($f.Recommendation) { & $add "<p class=""todo""><b>Cosa fare.</b> $(& $p $f.Recommendation)</p>" }
-        # Azioni: visibili solo dentro l'app, che le esegue (il report da solo resta di sola lettura)
+        if ($f.Recommendation) { & $add "<p class=""todo""><b>What to do.</b> $(& $e $f.Recommendation)</p>" }
+        # Actions: visible only inside the app, which carries them out (the report alone stays read-only)
         $acts = @()
-        if ($f.Path -and [IO.Path]::IsPathRooted($f.Path)) { $acts += '<button type="button" class="act" data-act="reveal">Mostra il file</button>' }
-        if ($f.Remedy) { $acts += '<button type="button" class="act act-main" data-act="disable">Disattiva</button>' }
-        if ($f.Severity -ne 'Info') { $acts += '<button type="button" class="act" data-act="ignore">Ignora nelle prossime verifiche</button>' }
+        if ($f.Path -and [IO.Path]::IsPathRooted($f.Path)) { $acts += '<button type="button" class="act" data-act="reveal">Show the file</button>' }
+        if ($f.Remedy) { $acts += '<button type="button" class="act act-main" data-act="disable">Disable</button>' }
+        if ($f.Severity -ne 'Info') { $acts += '<button type="button" class="act" data-act="ignore">Ignore in future scans</button>' }
         if ($acts) { & $add "<div class=""acts"" data-id=""$(& $e $f.Id)"">$($acts -join '')<span class=""act-done"" role=""status""></span></div>" }
         & $add '</div></details>'
     }
     & $add '</div>'
-    if (-not $Findings) { & $add '<p class="empty">Nessuna segnalazione: tutte le aree hanno superato la verifica.</p>' }
-    & $add '<p class="empty empty-filter" hidden>Nessuna segnalazione con questi filtri.<button type="button" data-reset>Mostra tutto</button></p>'
+    if (-not $Findings) { & $add '<p class="empty">No findings: every area passed the check.</p>' }
+    & $add '<p class="empty empty-filter" hidden>No findings match these filters.<button type="button" data-reset>Show all</button></p>'
     & $add '</section></div>'
 
-    # Linea temporale: solo se il controllo e' stato eseguito ($null = non eseguito)
+    # Timeline: only if the check ran ($null = not run)
     if ($null -ne $Timeline) {
         $tl = @($Timeline | Sort-Object Time -Descending)
         $ids = @{}; foreach ($f in $Findings) { $ids[$f.Id] = $true }
         $maxRows = 60
-        & $add "<section class=""list tl"" aria-labelledby=""tl-h""><div class=""list-head""><h2 id=""tl-h"">Linea temporale<span class=""count"">$($tl.Count)</span></h2><p class=""tl-note"">Ultimi 30 giorni secondo i registri di Windows</p></div>"
+        & $add "<section class=""list tl"" aria-labelledby=""tl-h""><div class=""list-head""><h2 id=""tl-h"">Timeline<span class=""count"">$($tl.Count)</span></h2><p class=""tl-note"">Last 30 days according to the Windows logs</p></div>"
         if (-not $tl) {
-            & $add '<p class="empty">Nessun evento rilevante negli ultimi 30 giorni.</p>'
+            & $add '<p class="empty">No relevant events in the last 30 days.</p>'
         } else {
             & $add '<ol class="tl-rows">'
             foreach ($t in ($tl | Select-Object -First $maxRows)) {
                 $when = [datetime]::Parse($t.Time, [Globalization.CultureInfo]::InvariantCulture)
-                $dot = @{ Alto = '<span class="dot d-alto"></span>'; Medio = '<span class="dot d-medio"></span>' }[$t.Severity]
-                $what = & $p $t.Text
+                $dot = @{ High = '<span class="dot d-high"></span>'; Medium = '<span class="dot d-medium"></span>' }[$t.Severity]
+                $what = & $e $t.Text
                 if ($t.FindingId -and $ids.ContainsKey($t.FindingId)) { $what = "<a href=""#f-$(& $e $t.FindingId)"">$what</a>" }
                 $path = ''; if ($t.Path) { $path = "<code>$(& $e $t.Path)</code>" }
-                & $add "<li class=""tl-row""><time datetime=""$(& $e $t.Time)"">$($when.ToString('dd/MM/yyyy HH:mm'))</time><span class=""tl-src"">$(& $e $t.Source)</span><span class=""tl-what"">$dot$what$path</span></li>"
+                & $add "<li class=""tl-row""><time datetime=""$(& $e $t.Time)"">$($when.ToString('yyyy-MM-dd HH:mm'))</time><span class=""tl-src"">$(& $e $t.Source)</span><span class=""tl-what"">$dot$what$path</span></li>"
             }
             & $add '</ol>'
-            if ($tl.Count -gt $maxRows) { & $add "<p class=""tl-more"">Altri $($tl.Count - $maxRows) eventi nel file JSON.</p>" }
+            if ($tl.Count -gt $maxRows) { & $add "<p class=""tl-more"">$($tl.Count - $maxRows) more events in the JSON file.</p>" }
         }
         & $add '</section>'
     }
 
-    # Elementi nascosti dalla lista bianca: chiusi, ma sempre elencati con la regola che li nasconde
+    # Items hidden by the allowlist: collapsed, but always listed with the rule that hides them
     $hidden = @($Ignored | Where-Object { $_ })
     if ($hidden) {
         $maxHidden = 200
-        & $add "<section class=""list tl"" aria-labelledby=""ig-h""><details><summary class=""list-head""><h2 id=""ig-h"">Nascosti dalla lista bianca<span class=""count"">$($hidden.Count)</span></h2><span class=""tl-note"">Controlla di riconoscerli tutti</span></summary>"
-        & $add '<p class="tl-more">Questi elementi non compaiono tra le segnalazioni perch&eacute; corrispondono alla lista bianca o li hai ignorati dall''app. Se ne vedi uno che non hai scelto tu, qualcuno ha modificato la lista: toglilo e ripeti la verifica.</p><ol class="tl-rows">'
+        & $add "<section class=""list tl"" aria-labelledby=""ig-h""><details><summary class=""list-head""><h2 id=""ig-h"">Hidden by the allowlist<span class=""count"">$($hidden.Count)</span></h2><span class=""tl-note"">Make sure you recognize all of them</span></summary>"
+        & $add '<p class="tl-more">These items are not among the findings because they match the allowlist or you ignored them in the app. If you see one you did not choose yourself, someone changed the list: remove it and run the scan again.</p><ol class="tl-rows">'
         foreach ($h in ($hidden | Select-Object -First $maxHidden)) {
             $path = ''; if ($h.Path) { $path = "<code>$(& $e $h.Path)</code>" }
-            # Colonna stretta: solo il tipo di regola ("percorso", "titolo"...); la regola intera sotto il titolo
+            # Narrow column: only the kind of rule ("path", "title"...); the full rule under the title
             $kind = ("$($h.Rule)" -split ' ')[0]
-            & $add "<li class=""tl-row""><span class=""tl-src"">$(& $p $h.Category)</span><span class=""tl-src"">$(& $e $kind)</span><span class=""tl-what"">$(& $p $h.Title)$path<code>Regola: $(& $e $h.Rule)</code></span></li>"
+            & $add "<li class=""tl-row""><span class=""tl-src"">$(& $e $h.Category)</span><span class=""tl-src"">$(& $e $kind)</span><span class=""tl-what"">$(& $e $h.Title)$path<code>Rule: $(& $e $h.Rule)</code></span></li>"
         }
         & $add '</ol>'
-        if ($hidden.Count -gt $maxHidden) { & $add "<p class=""tl-more"">Altri $($hidden.Count - $maxHidden) elementi nel file JSON.</p>" }
+        if ($hidden.Count -gt $maxHidden) { & $add "<p class=""tl-more"">$($hidden.Count - $maxHidden) more items in the JSON file.</p>" }
         & $add '</details></section>'
     }
 
-    # Cosa fare e limiti
+    # What to do and limits
     & $add @'
-<div class="guide"><section aria-labelledby="g1"><h2 id="g1">Se trovi qualcosa</h2><ol>
-<li><b>Non cancellare subito.</b> Annota il percorso e cerca il file su VirusTotal con il link nella segnalazione.</li>
-<li>Se un elemento rosso &egrave; confermato malevolo, scollega il PC da internet.</li>
-<li>Esegui Microsoft Defender Offline (Sicurezza di Windows, Protezione da virus e minacce, Opzioni di analisi) e un secondo scanner.</li>
-<li>Rimuovi prima le voci di avvio (attivit&agrave; pianificata, chiave Run, servizio) e solo dopo i file, altrimenti il malware si reinstalla.</li>
-<li>Da un altro dispositivo cambia le password, a partire dall'email, e attiva la verifica in due passaggi.</li>
-<li>Nel dubbio, su un PC con dati importanti, reinstalla Windows.</li>
-</ol></section><section aria-labelledby="g2"><h2 id="g2">Cosa questa verifica non vede</h2>
-<p>CheckBackdoor cerca le tracce che una backdoor lascia per sopravvivere ai riavvii e per comunicare. Non vede un rootkit gi&agrave; attivo nel kernel, che pu&ograve; nascondersi a Windows stesso: per quello serve Microsoft Defender Offline. Non vede il malware che vive solo in memoria, n&eacute; uno stealer che ha gi&agrave; rubato i dati e si &egrave; cancellato.</p>
-<p>Molti elementi da verificare sono software legittimo: quelli che hai controllato si nascondono aggiungendoli ad <code>allowlist.local.json</code>. Per vedere cosa cambia un programma sospetto, esegui una scansione prima e una dopo con <code>-CompareLast</code>.</p>
+<div class="guide"><section aria-labelledby="g1"><h2 id="g1">If you find something</h2><ol>
+<li><b>Do not delete it right away.</b> Note the path and look the file up on VirusTotal with the link in the finding.</li>
+<li>If a red item is confirmed malicious, disconnect the PC from the internet.</li>
+<li>Run Microsoft Defender Offline (Windows Security, Virus &amp; threat protection, Scan options) and a second scanner.</li>
+<li>Remove the startup entries first (scheduled task, Run key, service) and only then the files, otherwise the malware reinstalls itself.</li>
+<li>From another device, change your passwords, starting with your email, and turn on two-step verification.</li>
+<li>When in doubt, on a PC with important data, reinstall Windows.</li>
+</ol></section><section aria-labelledby="g2"><h2 id="g2">What this scan cannot see</h2>
+<p>CheckBackdoor looks for the traces a backdoor leaves to survive reboots and to communicate. It cannot see a rootkit already active in the kernel, which can hide from Windows itself: for that you need Microsoft Defender Offline. It cannot see malware that lives only in memory, nor a stealer that already stole the data and deleted itself.</p>
+<p>Many items to review are legitimate software: hide the ones you have checked by adding them to <code>allowlist.local.json</code>. To see what a suspicious program changes, run one scan before and one after with <code>-CompareLast</code>.</p>
 </section></div></main>
 '@
-    $privacy = 'Report creato su questo PC: nessun dato della scansione &egrave; stato inviato.'
-    if ($Meta.VirusTotal) { $privacy = 'Report creato su questo PC: solo le impronte SHA-256 dei file segnalati sono state inviate a VirusTotal.' }
-    $ignored = ''
-    if ($Meta.Ignored) { $ignored = " $($Meta.Ignored) elementi nascosti dalla lista bianca$(if ($hidden) { ', elencati qui sopra' })." }
-    & $add "<footer class=""foot"">CheckBackdoor $(& $e $Meta.Version). $privacy$ignored</footer>"
+    $privacy = 'Report created on this PC: no scan data was sent anywhere.'
+    if ($Meta.VirusTotal) { $privacy = 'Report created on this PC: only the SHA-256 hashes of the flagged files were sent to VirusTotal.' }
+    $ignoredNote = ''
+    if ($Meta.Ignored) { $ignoredNote = " $($Meta.Ignored) items hidden by the allowlist$(if ($hidden) { ', listed above' })." }
+    & $add "<footer class=""foot"">CheckBackdoor $(& $e $Meta.Version). $privacy$ignoredNote</footer>"
     & $add "<script>$bodyJs</script></body></html>"
     return $sb.ToString()
 }

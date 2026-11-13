@@ -1,28 +1,28 @@
 <#
 .SYNOPSIS
-    Disattiva un elemento segnalato da CheckBackdoor salvando un backup, o annulla.
+    Disables an item reported by CheckBackdoor after saving a backup, or undoes it.
 
 .DESCRIPTION
-    Lo usa l'app quando scegli "Disattiva" o "Annulla". Non cancella mai nulla:
-    - voce di avvio nel registro: la toglie dopo averne salvato tipo e contenuto;
-    - file nella cartella Esecuzione automatica: lo sposta nella cartella dei backup;
-    - attivita' pianificata: la disattiva;
-    - servizio: lo imposta su Disabilitato e lo ferma.
-    Ogni modifica ha un file di backup checkbackdoor.backup/1 che permette di annullarla.
+    The app uses it when you choose "Disable" or "Undo". It never deletes anything:
+    - autostart entry in the registry: removed after saving its type and content;
+    - file in the Startup folder: moved into the backup folder;
+    - scheduled task: disabled;
+    - service: set to Disabled and stopped.
+    Every change has a checkbackdoor.backup/1 backup file that allows undoing it.
 
-    Come amministratore i backup vanno in %ProgramData%\CheckBackdoor\backup, che solo gli
-    amministratori possono scrivere, e si annullano solo i backup di quella cartella: un
-    backup nel profilo dell'utente potrebbe essere stato ritoccato da qualsiasi programma.
+    As administrator, backups go to %ProgramData%\CheckBackdoor\backup, which only
+    administrators can write, and only backups in that folder are undone: a backup in the
+    user's profile could have been altered by any program.
 
 .PARAMETER RequestSha256
-    Impronta SHA-256 che il file della richiesta deve avere. Chi lancia lo script come
-    amministratore la calcola quando mostra la richiesta all'utente: se nel frattempo il file
-    viene sostituito, l'azione non parte.
+    SHA-256 hash the request file must have. Whoever runs the script as administrator
+    computes it when showing the request to the user: if the file is replaced in the
+    meantime, the action does not start.
 
 .EXAMPLE
-    .\Actions.ps1 -RequestFile richiesta.json -BackupDir backup -ResultFile esito.json
+    .\Actions.ps1 -RequestFile request.json -BackupDir backup -ResultFile result.json
 .EXAMPLE
-    .\Actions.ps1 -BackupFile backup\20261111_120000_ab12cd.json -ResultFile esito.json
+    .\Actions.ps1 -BackupFile backup\20261111_120000_ab12cd.json -ResultFile result.json
 #>
 [CmdletBinding(DefaultParameterSetName = 'Disable')]
 param(
@@ -36,27 +36,27 @@ param(
 $ErrorActionPreference = 'Stop'
 $result = [ordered]@{ ok = $false; message = $null; backupFile = $null; title = $null }
 try {
-    foreach ($m in 'Common', 'Remedy') {
+    foreach ($m in 'Common', 'CommandRisk', 'Remedy') {
         . ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path $PSScriptRoot "modules\$m.ps1"))))
     }
     if ($PSCmdlet.ParameterSetName -eq 'Disable') {
-        # Il file si legge una volta sola: l'impronta e la richiesta eseguita sono dello stesso contenuto
+        # The file is read only once: the hash and the request carried out come from the same content
         $bytes = [IO.File]::ReadAllBytes($RequestFile)
         if ($RequestSha256) {
             $sha = [Security.Cryptography.SHA256]::Create()
             try { $actual = (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() }
-            if ($actual -ne $RequestSha256.ToLowerInvariant()) { throw "La richiesta e' cambiata dopo la tua conferma: non e' stato modificato nulla." }
+            if ($actual -ne $RequestSha256.ToLowerInvariant()) { throw 'The request changed after you confirmed it: nothing was changed.' }
         }
         $req = (New-Object Text.UTF8Encoding($false)).GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json
         $done = Invoke-RemedyDisable -Request $req -BackupDir $BackupDir
         $result.backupFile = $done.BackupFile
         $result.title = $done.Backup.Title
-        $result.message = 'Disattivato. Puoi annullare quando vuoi dalle impostazioni.'
+        $result.message = 'Disabled. You can undo it any time from the settings.'
     } else {
         $b = Invoke-RemedyUndo -BackupFile $BackupFile
         $result.backupFile = $BackupFile
         $result.title = $b.Title
-        $result.message = 'Modifica annullata: l''elemento e'' tornato com''era.'
+        $result.message = 'Change undone: the item is back as it was.'
     }
     $result.ok = $true
 } catch {

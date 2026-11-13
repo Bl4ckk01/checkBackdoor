@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -11,20 +11,20 @@
     <Product>CheckBackdoor</Product>
     <Version>1.2.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-    <SatelliteResourceLanguages>it</SatelliteResourceLanguages>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
   </ItemGroup>
 
-  <!-- Il motore di scansione (PowerShell) viaggia accanto all'app, nella cartella engine\ -->
+  <!-- The scan engine (PowerShell) ships next to the app, in the engine\ folder -->
   <ItemGroup>
     <None Include="..\..\CheckBackdoor.ps1" Link="engine\CheckBackdoor.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\Actions.ps1" Link="engine\Actions.ps1" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\allowlist.json" Link="engine\allowlist.json" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\..\modules\*.ps1" Link="engine\modules\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
-    <!-- L'interfaccia: HTML, CSS e JS serviti a WebView2 da una cartella locale -->
+    <!-- The interface: HTML, CSS and JS served to WebView2 from a local folder -->
     <None Include="ui\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

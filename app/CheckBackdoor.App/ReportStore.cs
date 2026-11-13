@@ -1,9 +1,9 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 
 namespace CheckBackdoor.App;
 
-/// <summary>Riassunto delle verifiche gia' fatte, letto dai report JSON (checkbackdoor.report/1).</summary>
+/// <summary>Summary of the scans already done, read from the JSON reports (checkbackdoor.report/1).</summary>
 public static class ReportStore
 {
     public const string ReportHost = "report.checkbackdoor.example";
@@ -13,7 +13,7 @@ public static class ReportStore
         var list = new JsonArray();
         if (!Directory.Exists(reportsDir)) return list;
         var files = new DirectoryInfo(reportsDir).GetFiles("*.json")
-            .Where(f => f.Name.StartsWith("scansione_") || f.Name.StartsWith("controllo_"))
+            .Where(f => f.Name.StartsWith("scan_") || f.Name.StartsWith("check_"))
             .OrderByDescending(f => f.LastWriteTimeUtc)
             .Take(max);
         foreach (var f in files)
@@ -31,7 +31,7 @@ public static class ReportStore
             using var doc = JsonDocument.Parse(File.ReadAllText(jsonPath));
             var root = doc.RootElement;
             var meta = root.GetProperty("Meta");
-            var counts = new Dictionary<string, int> { ["Alto"] = 0, ["Medio"] = 0, ["Basso"] = 0, ["Info"] = 0 };
+            var counts = new Dictionary<string, int> { ["High"] = 0, ["Medium"] = 0, ["Low"] = 0, ["Info"] = 0 };
             if (root.TryGetProperty("Findings", out var findings) && findings.ValueKind == JsonValueKind.Array)
                 foreach (var f in findings.EnumerateArray())
                     if (f.TryGetProperty("Severity", out var s) && s.GetString() is string sev && counts.ContainsKey(sev)) counts[sev]++;
@@ -49,16 +49,16 @@ public static class ReportStore
                 ["duration"] = Str(meta, "Duration"),
                 ["admin"] = meta.TryGetProperty("Admin", out var a) && a.ValueKind == JsonValueKind.True,
                 ["examined"] = examined,
-                ["counts"] = new JsonObject { ["Alto"] = counts["Alto"], ["Medio"] = counts["Medio"], ["Basso"] = counts["Basso"], ["Info"] = counts["Info"] },
+                ["counts"] = new JsonObject { ["High"] = counts["High"], ["Medium"] = counts["Medium"], ["Low"] = counts["Low"], ["Info"] = counts["Info"] },
                 ["htmlUrl"] = File.Exists(html) ? $"https://{ReportHost}/{Uri.EscapeDataString(Path.GetFileName(html))}" : null,
                 ["htmlPath"] = File.Exists(html) ? html : null,
                 ["jsonPath"] = jsonPath,
             };
         }
-        catch (Exception) { return null; }   // report di una versione diversa o incompleto: si salta
+        catch (Exception) { return null; }   // report from another version or incomplete: skipped
     }
 
-    /// <summary>Una segnalazione del report, cercata per ID (per le azioni dell'app).</summary>
+    /// <summary>A finding of the report, looked up by ID (for the app actions).</summary>
     public static JsonObject? FindFinding(string jsonPath, string id)
     {
         var root = JsonNode.Parse(File.ReadAllText(jsonPath));
@@ -69,9 +69,9 @@ public static class ReportStore
     }
 
     /// <summary>
-    /// Cosa e' cambiato tra due verifiche: segnalazioni nuove e risolte (per ID), elementi
-    /// installati e rimossi (inventario). Le connessioni di rete cambiano di continuo e
-    /// restano fuori; le aree non controllate in una delle due non contano come "rimosse".
+    /// What changed between two scans: new and resolved findings (by ID), items installed
+    /// and removed (inventory). Network connections change all the time and are left out;
+    /// areas not checked in one of the two do not count as "removed".
     /// </summary>
     public static JsonObject Compare(string olderJson, string newerJson)
     {
@@ -83,7 +83,7 @@ public static class ReportStore
             var d = new Dictionary<string, JsonObject>(StringComparer.OrdinalIgnoreCase);
             if (r["Findings"] is JsonArray arr)
                 foreach (var f in arr.OfType<JsonObject>())
-                    if ((string?)f["Id"] is string id && (string?)f["Severity"] != "Info" && !((string?)f["Category"] ?? "").StartsWith("Novit")) d[id] = f;
+                    if ((string?)f["Id"] is string id && (string?)f["Severity"] != "Info" && !((string?)f["Category"] ?? "").StartsWith("Changes since")) d[id] = f;
             return d;
         }
         static Dictionary<string, JsonObject> InventoryOf(JsonNode r)
@@ -93,8 +93,8 @@ public static class ReportStore
                 foreach (var i in arr.OfType<JsonObject>())
                 {
                     string cat = (string?)i["Category"] ?? "", key = (string?)i["Key"] ?? "";
-                    if (cat == "Rete" && (key.StartsWith("Listen |") || key.StartsWith("Established |"))) continue;
-                    if (key == "File eseguibili esaminati") continue;
+                    if (cat == "Network" && (key.StartsWith("Listen |") || key.StartsWith("Established |"))) continue;
+                    if (key == "Executable files examined") continue;
                     d[$"{cat}|{key}"] = i;
                 }
             return d;
@@ -114,7 +114,7 @@ public static class ReportStore
         var catsA = ia.Values.Select(i => (string?)i["Category"]).ToHashSet();
         var catsB = ib.Values.Select(i => (string?)i["Category"]).ToHashSet();
 
-        var order = new Dictionary<string, int> { ["Alto"] = 0, ["Medio"] = 1, ["Basso"] = 2 };
+        var order = new Dictionary<string, int> { ["High"] = 0, ["Medium"] = 1, ["Low"] = 2 };
         int Sev(JsonObject f) => order.TryGetValue((string?)f["Severity"] ?? "", out var n) ? n : 3;
         const int Max = 300;
         return new JsonObject
@@ -124,7 +124,7 @@ public static class ReportStore
             ["newFindings"] = new JsonArray(fb.Where(kv => !fa.ContainsKey(kv.Key)).Select(kv => kv.Value).OrderBy(Sev).Take(Max).Select(f => (JsonNode)Pick(f)).ToArray()),
             ["resolved"] = new JsonArray(fa.Where(kv => !fb.ContainsKey(kv.Key)).Select(kv => kv.Value).OrderBy(Sev).Take(Max).Select(f => (JsonNode)Pick(f)).ToArray()),
             ["added"] = new JsonArray(ib.Where(kv => !ia.ContainsKey(kv.Key) && catsA.Contains((string?)kv.Value["Category"])).Take(Max).Select(kv => (JsonNode)PickInv(kv.Value)).ToArray()),
-            // Stesso elemento con un valore diverso: di solito un aggiornamento (cambia la versione nel percorso)
+            // Same item with a different value: usually an update (the version in the path changes)
             ["changed"] = new JsonArray(ib.Where(kv => ia.TryGetValue(kv.Key, out var old) && (string?)old["Value"] != (string?)kv.Value["Value"])
                 .Take(Max).Select(kv => { var o = PickInv(kv.Value); o["before"] = (string?)ia[kv.Key]["Value"]; return (JsonNode)o; }).ToArray()),
             ["removed"] = new JsonArray(ia.Where(kv => !ib.ContainsKey(kv.Key) && catsB.Contains((string?)kv.Value["Category"])).Take(Max).Select(kv => (JsonNode)PickInv(kv.Value)).ToArray()),

@@ -113,7 +113,7 @@ if ($File) {
 # --- Loading the modules -----------------------------------------------------
 # Reading the text explicitly works even with paths that contain [ ]
 $script:EngineRoot = $PSScriptRoot
-$modules = 'Common', 'Persistence', 'AutorunExtra', 'ScheduledTasks', 'Services', 'Wmi', 'Processes', 'Network', 'Browser', 'Injections', 'Security', 'Accounts', 'Certificates', 'FileSystem', 'Timeline', 'FileCheck', 'VirusTotal', 'Report'
+$modules = 'Common', 'CommandRisk', 'Persistence', 'AutorunExtra', 'ScheduledTasks', 'Services', 'Wmi', 'Processes', 'Network', 'Browser', 'Injections', 'Security', 'Accounts', 'Certificates', 'FileSystem', 'Timeline', 'FileCheck', 'VirusTotal', 'Report'
 # An antivirus may quarantine a module: better to say so clearly than to fail halfway
 $missingModules = @($modules | Where-Object { -not (Test-Path -LiteralPath (Join-Path $PSScriptRoot "modules\$_.ps1")) })
 if ($missingModules) {

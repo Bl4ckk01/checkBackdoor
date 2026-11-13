@@ -1,10 +1,10 @@
-# File sospetti nelle cartelle dove i malware si installano senza bisogno di
-# privilegi: AppData, Temp, ProgramData, Pubblica. Cerca eseguibili non firmati,
-# script, file nascosti e flussi di dati alternativi (ADS).
+# Suspicious files in the folders where malware installs itself without needing
+# privileges: AppData, Temp, ProgramData, Public. Looks for unsigned executables,
+# scripts, hidden files and alternate data streams (ADS).
 
 function Invoke-CheckFileSystem {
     param([switch]$Deep)
-    $cat = 'File sospetti'
+    $cat = 'Suspicious files'
 
     $roots = New-Object System.Collections.Generic.List[object]
     foreach ($prof in Get-ChildItem -LiteralPath "$env:SystemDrive\Users" -Directory -Force -ErrorAction SilentlyContinue) {
@@ -22,7 +22,7 @@ function Invoke-CheckFileSystem {
     $roots.Add(@{ P = "$env:SystemDrive\Intel"; D = 2 })
     $roots.Add(@{ P = "$env:SystemDrive\`$Recycle.Bin"; D = 3 })
 
-    # Cache, librerie e risorse di app: contengono decine di migliaia di file .js/.exe legittimi
+    # Caches, libraries and app resources: tens of thousands of legitimate .js/.exe files
     $skipDirs = '(?i)\\(Packages|Microsoft\\(Edge|WindowsApps|Teams|OneDrive|Windows\\(INetCache|WebCache|Explorer|Caches|WER))|Google\\Chrome|BraveSoftware|Mozilla\\Firefox\\Profiles|Opera Software|npm-cache|npm|pip|pnpm|yarn|NuGet|\.vscode|\.git|Code\\(Cache|CachedData)|htmlcache|CrashDumps|D3DSCache|DXCache|GLCache|Package Cache|assembly|Docker|JetBrains|Python\d*|node_modules|site-packages|resources\\app|Windows Defender|Windows\\Recent|Office\\Recent|cache|Cache|Code Cache|GPUCache|Service Worker|IndexedDB|Local Storage|dist|lib)$'
     $binExt = '(?i)\.(exe|scr|cpl|jar|lnk)$'
     $scriptExt = '(?i)\.(vbs|vbe|js|jse|wsf|wsh|hta|ps1|bat|cmd)$'
@@ -58,7 +58,7 @@ function Invoke-CheckFileSystem {
             }
         }
     }
-    Add-InventoryItem $cat 'File eseguibili esaminati' "$count"
+    Add-InventoryItem $cat 'Executable files examined' "$count"
 }
 
 function Test-SuspiciousFile {
@@ -68,12 +68,12 @@ function Test-SuspiciousFile {
     $score = 0; $why = @()
 
     if ($ext -eq '.lnk') {
-        # Collegamenti in cartelle di sistema che lanciano interpreti di comandi
+        # Shortcuts in system folders that launch command interpreters
         $lnk = Resolve-Shortcut $path
         if ($lnk -and $lnk.Target) {
             $risk = Get-CommandRisk "`"$($lnk.Target)`" $($lnk.Arguments)"
             if ($risk.Score -ge 35 -and $risk.Reasons -match 'PowerShell|mshta|rundll32|regsvr32|Base64|internet|script') {
-                Add-Finding -Category $Category -Severity (ConvertTo-Severity $risk.Score) -Title "Collegamento sospetto: $($File.Name)" -Path $path `
+                Add-Finding -Category $Category -Severity (ConvertTo-Severity $risk.Score) -Title "Suspicious shortcut: $($File.Name)" -Path $path `
                     -Evidence "$($lnk.Target) $($lnk.Arguments)" -Mitre 'T1547.009' -Reasons $risk.Reasons
             }
         }
@@ -85,61 +85,61 @@ function Test-SuspiciousFile {
     $recent = $File.CreationTime -gt (Get-Date).AddDays(-30)
 
     if ($isScript) {
-        # Gli script in AppData/ProgramData sono rari; nei Temp sono spesso residui di installer
-        $score += 15; $why += 'Script in una cartella utente'
-        if ($ext -match '^\.(vbs|vbe|js|jse|wsf|hta)$') { $score += 15; $why += 'VBScript/JScript/HTA: formati usati quasi solo da malware al giorno d''oggi' }
+        # Scripts in AppData/ProgramData are rare; in Temp they are often installer leftovers
+        $score += 15; $why += 'Script in a user folder'
+        if ($ext -match '^\.(vbs|vbe|js|jse|wsf|hta)$') { $score += 15; $why += 'VBScript/JScript/HTA: formats used almost only by malware nowadays' }
         if ($File.Length -lt 2MB) {
             $text = $null
             try { $text = [IO.File]::ReadAllText($path) } catch { }
             if ($text) {
                 foreach ($p in $script:SuspiciousPatterns) {
-                    if ($text -match $p.Rx) { $score += [int]($p.S / 2); $why += "Contenuto: $($p.R)" }
+                    if ($text -match $p.Rx) { $score += [int]($p.S / 2); $why += "Content: $($p.R)" }
                 }
                 if ($text -match '(?i)(chr\(\d+\)\s*&\s*){10,}|(\[char\]\d+\s*\+\s*){10,}|[A-Za-z0-9+/]{400,}={0,2}') {
-                    $score += 25; $why += 'Contenuto offuscato (lunghe stringhe Base64 o catene di caratteri)'
+                    $score += 25; $why += 'Obfuscated content (long Base64 strings or chains of characters)'
                 }
             }
         }
     } else {
         $info = Get-FileInfo $path
         if ($info.IsMicrosoft -or $info.SignatureStatus -eq 'Valid') {
-            # Firmato: segnaliamo solo se nascosto in una posizione strana
+            # Signed: reported only when hidden in an odd location
             if ($hidden -and $Depth -eq 0) {
-                $score += 15; $why += 'Eseguibile firmato ma nascosto in una cartella utente'
+                $score += 15; $why += 'Signed executable but hidden in a user folder'
             }
         } else {
-            $score += 15; $why += "Eseguibile non firmato ($($info.SignatureStatus))"
-            if ($info.SignatureStatus -eq 'HashMismatch') { $score += 40; $why += 'Firma manomessa' }
-            if ($Depth -eq 0) { $score += 15; $why += 'Si trova direttamente nella radice di AppData/ProgramData/Temp invece che nella cartella di un programma' }
-            if (-not $info.Company -and -not $info.Description) { $score += 5; $why += 'Nessuna informazione sul produttore' }
-            if (Test-RandomLookingName $path) { $score += 15; $why += 'Nome casuale' }
+            $score += 15; $why += "Unsigned executable ($($info.SignatureStatus))"
+            if ($info.SignatureStatus -eq 'HashMismatch') { $score += 40; $why += 'Tampered signature' }
+            if ($Depth -eq 0) { $score += 15; $why += 'Located directly in the root of AppData/ProgramData/Temp instead of a program folder' }
+            if (-not $info.Company -and -not $info.Description) { $score += 5; $why += 'No publisher information' }
+            if (Test-RandomLookingName $path) { $score += 15; $why += 'Random name' }
             if ($path -match '(?i)\\(Microsoft|Windows|Intel|NVIDIA|Google|Adobe)\\[^\\]+$' -and $Depth -le 2) {
-                $score += 10; $why += 'Non firmato ma in una cartella che imita un produttore noto'
+                $score += 10; $why += 'Unsigned but in a folder that imitates a well-known vendor'
             }
             if ($File.Name -match '^(?i)(svchost|csrss|lsass|winlogon|services|smss|explorer|dllhost|conhost|taskhostw|runtimebroker|spoolsv|wininit|ctfmon|dwm)\.exe$') {
-                $score += 50; $why += 'Usa il nome di un processo di sistema fuori da System32'
+                $score += 50; $why += 'Uses the name of a system process outside System32'
             }
-            if ($path -match '(?i)\\\$Recycle\.Bin\\') { $score += 20; $why += 'Eseguibile nel Cestino (posizione usata per nascondersi)' }
-            if ($path -match '(?i)\\AppData\\Local\\Temp\\' -and $Depth -ge 1) { $score -= 10 }   # residui di installer
+            if ($path -match '(?i)\\\$Recycle\.Bin\\') { $score += 20; $why += 'Executable in the Recycle Bin (a location used to hide)' }
+            if ($path -match '(?i)\\AppData\\Local\\Temp\\' -and $Depth -ge 1) { $score -= 10 }   # installer leftovers
         }
     }
-    if ($hidden) { $score += 15; $why += 'Attributo nascosto/di sistema' }
-    if ($recent -and $score -gt 0) { $score += 5; $why += "Creato il $($File.CreationTime.ToString('dd/MM/yyyy'))" }
+    if ($hidden) { $score += 15; $why += 'Hidden/system attribute' }
+    if ($recent -and $score -gt 0) { $score += 5; $why += "Created on $($File.CreationTime.ToString('yyyy-MM-dd'))" }
 
-    # Flussi di dati alternativi: dati nascosti "dentro" un file, invisibili in Esplora risorse.
-    # Controllo costoso: solo per i file nella radice o gia' sospetti.
+    # Alternate data streams: data hidden "inside" a file, invisible in File Explorer.
+    # An expensive check: only for files in the root or already suspicious.
     if ($Depth -eq 0 -or $score -gt 0) { try {
         $streams = Get-Item -LiteralPath $path -Stream * -ErrorAction Stop |
             Where-Object { $_.Stream -notin ':$DATA', 'Zone.Identifier', 'SmartScreen', 'com.dropbox.attrs', 'Afp_AfpInfo', 'OECustomProperty' -and $_.Length -gt 0 }
-        foreach ($s in $streams) { $score += 30; $why += "Contiene un flusso di dati nascosto (ADS) '$($s.Stream)' di $($s.Length) byte" }
+        foreach ($s in $streams) { $score += 30; $why += "Contains a hidden data stream (ADS) '$($s.Stream)' of $($s.Length) bytes" }
     } catch { } }
 
     $sev = ConvertTo-Severity $score
-    if ($sev -in 'Alto', 'Medio') {
+    if ($sev -in 'High', 'Medium') {
         $info = Get-FileInfo $path
         Add-Finding -Category $Category -Severity $sev -Title $File.Name -Path $path -Mitre 'T1036 / T1564' -Reasons $why `
-            -Evidence "Dimensione $([math]::Round($File.Length / 1KB)) KB; creato $($File.CreationTime.ToString('dd/MM/yyyy HH:mm')); modificato $($File.LastWriteTime.ToString('dd/MM/yyyy HH:mm'))" `
+            -Evidence "Size $([math]::Round($File.Length / 1KB)) KB; created $($File.CreationTime.ToString('yyyy-MM-dd HH:mm')); modified $($File.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))" `
             -Sha256 $info.Sha256 -Signer $info.Signer `
-            -Recommendation 'Carica il file su virustotal.com. Se e'' malevolo, prima rimuovi le voci di avvio che lo lanciano, poi elimina il file.'
+            -Recommendation 'Upload the file to virustotal.com. If it is malicious, first remove the autostart entries that launch it, then delete the file.'
     }
 }

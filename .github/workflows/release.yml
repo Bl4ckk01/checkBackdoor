@@ -1,15 +1,15 @@
-# Prepara una release quando si pubblica un tag "v1.2.0": test, app autonoma, installatore,
-# script e impronte SHA-256. La release resta in BOZZA: la pubblica una persona dopo averla
-# controllata. Se i segreti del certificato esistono, firma app, script e installatore.
+# Prepares a release when a "v1.2.0" tag is pushed: tests, self-contained app, installer,
+# scripts and SHA-256 hashes. The release stays a DRAFT: a person publishes it after
+# checking it. If the certificate secrets exist, it signs the app, scripts and installer.
 name: Release
 
 on:
   push:
     tags: ['v*']
 
-# Le action sono fissate al commit (il numero di versione e' nel commento): un tag come "v4"
-# puo' essere spostato su altro codice, un commit no. id-token e attestations servono
-# all'attestazione di provenienza dei file della release.
+# Actions are pinned to a commit (the version number is in the comment): a tag like "v4"
+# can be moved to other code, a commit cannot. id-token and attestations are needed
+# for the provenance attestation of the release files.
 permissions:
   contents: write
   id-token: write
@@ -26,20 +26,20 @@ jobs:
         with:
           dotnet-version: 10.0.x
 
-      - name: Strumenti
+      - name: Tools
         shell: powershell
         run: |
           Set-PSRepository PSGallery -InstallationPolicy Trusted
           Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force -SkipPublisherCheck
           choco install innosetup --version 6.7.1 -y --no-progress
 
-      - name: Il tag corrisponde alla versione
+      - name: The tag matches the version
         shell: powershell
         run: |
           $v = [regex]::Match((Get-Content CheckBackdoor.ps1 -Raw), "\`$Version = '([\d.]+)'").Groups[1].Value
-          if ("v$v" -ne $env:GITHUB_REF_NAME) { throw "Il tag $env:GITHUB_REF_NAME non corrisponde alla versione $v" }
+          if ("v$v" -ne $env:GITHUB_REF_NAME) { throw "The tag $env:GITHUB_REF_NAME does not match the version $v" }
 
-      - name: Costruisci (e firma, se c'e' il certificato)
+      - name: Build (and sign, if there is a certificate)
         shell: powershell
         env:
           SIGNING_PFX_BASE64: ${{ secrets.SIGNING_PFX_BASE64 }}
@@ -47,28 +47,28 @@ jobs:
         run: |
           $sign = @{}
           if ($env:SIGNING_PFX_BASE64) {
-            $pfx = Join-Path $env:RUNNER_TEMP 'firma.pfx'
+            $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
             $sign = @{ PfxPath = $pfx; PfxPassword = $env:SIGNING_PFX_PASSWORD }
           }
           .\tools\Build-Release.ps1 @sign
           if ($pfx) { Remove-Item $pfx -Force }
 
-      # Chi scarica puo' verificare che il file e' stato costruito qui, da questo commit:
-      #   gh attestation verify CheckBackdoor-<versione>-setup.exe --repo <proprietario>/<repository>
-      - name: Attestazione di provenienza
+      # Whoever downloads can verify the file was built here, from this commit:
+      #   gh attestation verify CheckBackdoor-<version>-setup.exe --repo <owner>/<repository>
+      - name: Provenance attestation
         uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
         with:
           subject-path: |
             dist/*.zip
             dist/*.exe
 
-      - name: Bozza della release
+      - name: Draft release
         shell: powershell
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $notes = Join-Path $env:RUNNER_TEMP 'note.md'
+          $notes = Join-Path $env:RUNNER_TEMP 'notes.md'
           $v = $env:GITHUB_REF_NAME.TrimStart('v')
           $text = Get-Content CHANGELOG.md -Raw
           $m = [regex]::Match($text, "(?ms)^## $([regex]::Escape($v)).*?(?=^## |\z)")
