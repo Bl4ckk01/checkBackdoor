@@ -1,5 +1,5 @@
 ; CheckBackdoor installer (Inno Setup 6). Built by tools\Build-Release.ps1:
-;   ISCC.exe /DAppVersion=1.2.0 /DSourceDir=<published app> /DOutputDir=<dist> /DRootDir=<repository>
+;   ISCC.exe /DAppVersion=1.3.0 /DSourceDir=<published app> /DOutputDir=<dist> /DRootDir=<repository>
 ; Installs to Program Files (administrator rights needed): the engine runs as
 ; administrator, so its files must live where a user program cannot change them.
 ; Reports, backups and settings live in %LOCALAPPDATA%\CheckBackdoor and stay after

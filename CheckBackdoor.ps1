@@ -75,7 +75,7 @@ param(
     [switch]$PauseAtEnd
 )
 
-$Version = '1.2.0'
+$Version = '1.3.0'
 $ErrorActionPreference = 'Continue'
 $ProgressPreference = if ($Quiet) { 'SilentlyContinue' } else { 'Continue' }
 if (-not $OutputDir) { $OutputDir = Join-Path $PSScriptRoot 'report' }

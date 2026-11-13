@@ -3,7 +3,9 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Engine and app
 versions are the same.
 
-## Unreleased
+## 1.3.0
+
+The first public release.
 
 ### Changed
 - **Everything is in English**: interface, report, messages, code, comments and docs. File
