@@ -3,7 +3,7 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Engine and app
 versions are the same.
 
-## Unreleased
+## 1.4.0
 
 ### Added
 - **More actions on findings** in the app: **Quarantine** suspicious files, **Remove
@@ -12,7 +12,6 @@ versions are the same.
   **End process** for suspicious processes.
 - **Delete** for suspicious files and browser extensions: deletes them for good, after a
   warning about false positives. It refuses a file that changed after the scan.
-
 - **Backup** page in the app bar, shown only while something is in quarantine: every file
   and browser extension moved away, with **Restore** and **Delete for good**. Deleting never
   follows a link out of the backup folder.

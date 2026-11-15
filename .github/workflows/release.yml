@@ -1,4 +1,4 @@
-# Prepares a release when a "v1.3.0" tag is pushed: tests, self-contained app, installer,
+# Prepares a release when a "v1.4.0" tag is pushed: tests, self-contained app, installer,
 # scripts and SHA-256 hashes. The release stays a DRAFT: a person publishes it after
 # checking it. If the certificate secrets exist, it signs the app, scripts and installer.
 name: Release

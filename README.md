@@ -309,7 +309,7 @@ tests/                   Pester tests (see "Development and tests")
   persistence (Run entry, task, service, WMI, Defender exclusion... whose payload is a
   `Write-Output`), runs the scan, tells which ones it found and removes everything. It refuses
   to start outside a VM. See [docs/VALIDATION.md](docs/VALIDATION.md).
-- **Release**: a `v1.3.0` tag prepares a **draft** release on GitHub with installer, zips and
+- **Release**: a `v1.4.0` tag prepares a **draft** release on GitHub with installer, zips and
   hashes. With the `SIGNING_PFX_BASE64` and `SIGNING_PFX_PASSWORD` secrets (a code signing
   certificate from a recognized authority) it signs the exe, scripts and installer.
 

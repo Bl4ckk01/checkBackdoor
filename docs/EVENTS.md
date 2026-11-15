@@ -94,7 +94,7 @@ they generate no events and are counted in `ignored`.
 ## Example
 
 ```jsonl
-{"schema":"checkbackdoor.events/1","seq":1,"time":"...","pid":4120,"type":"scan.started","data":{"version":"1.3.0","admin":true,"checks":[{"id":"Security","label":"Windows defenses (Defender, exclusions, UAC, updates)"}, ...]}}
+{"schema":"checkbackdoor.events/1","seq":1,"time":"...","pid":4120,"type":"scan.started","data":{"version":"1.4.0","admin":true,"checks":[{"id":"Security","label":"Windows defenses (Defender, exclusions, UAC, updates)"}, ...]}}
 {"schema":"checkbackdoor.events/1","seq":2,"time":"...","pid":4120,"type":"check.started","data":{"id":"Security","label":"Windows defenses ...","index":1,"total":11}}
 {"schema":"checkbackdoor.events/1","seq":3,"time":"...","pid":4120,"type":"finding","data":{"check":"Security","finding":{"Id":"4a4c75afd4144cd0","Severity":"Medium","Category":"Windows defenses","Title":"...","Reasons":["..."]}}}
 {"schema":"checkbackdoor.events/1","seq":4,"time":"...","pid":4120,"type":"check.completed","data":{"id":"Security","status":"ok","error":null,"durationMs":2612,"findings":1}}
