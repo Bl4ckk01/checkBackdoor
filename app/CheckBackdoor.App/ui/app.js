@@ -35,15 +35,15 @@
     Compare: 'The comparison with the previous scan, to see what changed.'
   };
 
-  var app = { recent: [], isAdmin: false, scan: null, lastReport: null };
+  var app = { recent: [], isAdmin: false, scan: null, lastReport: null, quarantine: [] };
 
   // --- helpers ------------------------------------------------------------
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return '&#' + c.charCodeAt(0) + ';'; }); }
   function num(n) { return n.toLocaleString('en-US'); }
   function plural(n, one, many) { return n === 1 ? '1 ' + one : num(n) + ' ' + many; }
   function show(view) {
-    ['home', 'scan', 'end', 'results', 'history', 'compare', 'settings'].forEach(function (v) { $('view-' + v).hidden = v !== view; });
-    var section = { history: 'history', compare: 'history', settings: 'settings' }[view] || 'home';
+    ['home', 'scan', 'end', 'results', 'history', 'compare', 'backup', 'settings'].forEach(function (v) { $('view-' + v).hidden = v !== view; });
+    var section = { history: 'history', compare: 'history', backup: 'backup', settings: 'settings' }[view] || 'home';
     [].slice.call(d.querySelectorAll('.nav-b')).forEach(function (b) {
       if (b.getAttribute('data-nav') === section) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
@@ -312,7 +312,30 @@
         '<button class="btn" type="button" data-unignore="' + esc(x.id) + '">Restore</button></li>';
     }).join('') : '<li class="s-empty">No ignored items.</li>';
   }
-  var KIND = { RegistryValue: 'startup entry', File: 'file moved', ScheduledTask: 'task disabled', Service: 'service disabled' };
+  // --- backup (quarantine) ---------------------------------------------------
+  // The "Backup" button shows up only while something is in quarantine
+  function renderQuarantine(items) {
+    app.quarantine = items;
+    $('nav-backup').hidden = !items.length;
+    $('nav-backup-n').textContent = items.length || '';
+    $('q-count').textContent = items.length;
+    var what = { File: 'Startup file', QuarantineFile: 'Suspicious file', BrowserExtension: 'Browser extension' };
+    $('qlist').innerHTML = items.length ? items.map(function (x, i) {
+      var when = String(x.date || '').replace('T', ' ').slice(0, 16);
+      return '<li><span><span class="s-what">' + esc(x.title) + '</span><span class="s-when">' + esc((what[x.kind] || x.kind) + ' · ' + when) + '</span>' +
+        '<span class="s-path">' + esc(x.path) + '</span></span><span class="s-acts">' +
+        '<button class="btn" type="button" data-restore="' + i + '">Restore</button>' +
+        '<button class="btn btn-danger" type="button" data-purge="' + i + '">Delete for good</button></span></li>';
+    }).join('') : '<li class="s-empty">Nothing in quarantine.</li>';
+    // Emptied while open: back to home
+    if (!items.length && !$('view-backup').hidden) { show('home'); host.send({ type: 'refresh' }); }
+  }
+
+  var KIND = {
+    RegistryValue: 'startup entry', File: 'file moved', ScheduledTask: 'task disabled', Service: 'service disabled',
+    QuarantineFile: 'file quarantined', DefenderExclusion: 'Defender exclusion removed', Account: 'account disabled', RootCertificate: 'certificate removed',
+    BrowserExtension: 'extension removed'
+  };
   $('vt-form').addEventListener('submit', function (e) {
     e.preventDefault();
     var k = $('vt-key').value.trim();
@@ -354,9 +377,12 @@
       if (app.scan && n !== 'home') return toast('Wait for the current scan to finish.', false);
       if (n === 'home') { show('home'); host.send({ type: 'refresh' }); }
       if (n === 'history') { show('history'); host.send({ type: 'history' }); }
+      if (n === 'backup') { show('backup'); host.send({ type: 'quarantine' }); }
       if (n === 'settings') { show('settings'); host.send({ type: 'settings' }); }
       return;
     }
+    if (b.dataset.restore != null) { b.disabled = true; b.textContent = 'Restoring...'; return host.send({ type: 'undo', file: app.quarantine[+b.dataset.restore].file }); }
+    if (b.dataset.purge != null) return host.send({ type: 'purge', file: app.quarantine[+b.dataset.purge].file });
     if (b.dataset.hopen != null) return openReport(app.history[+b.dataset.hopen]);
     if (b.dataset.cmp != null) return host.send({ type: 'compare', newer: app.history[+b.dataset.cmp].jsonPath, older: app.history[+b.dataset.prev].jsonPath });
     if (b.dataset.undo != null) { b.disabled = true; b.textContent = 'Undoing...'; return host.send({ type: 'undo', file: app.backups[+b.dataset.undo].file }); }
@@ -401,8 +427,9 @@
       case 'history': renderHistoryAll(m.items); break;
       case 'compare': renderCompare(m.result || {}); break;
       case 'settings': renderSettings(m); break;
+      case 'quarantine': renderQuarantine(m.items || []); break;
       case 'notice': toast(m.text, m.ok); break;
-      case 'actionResult': toReport(m); if (m.text && /^Not |no longer exists|cannot be/.test(m.text)) toast(m.text, false); break;
+      case 'actionResult': toReport(m); if (m.id !== 'all' && m.text && /^Not |^Nothing|no longer exists|cannot be|Only files/.test(m.text)) toast(m.text, false); break;
     }
   });
   renderHome();
@@ -447,6 +474,10 @@
     return {
       send: function (m) {
         if (m.type === 'ready' || m.type === 'refresh') emit({ type: 'state', computer: 'DEMO-PC', user: 'DEMO-PC\\user', isAdmin: false, engineFound: true, recent: recent });
+        if (m.type === 'ready' || m.type === 'refresh' || m.type === 'quarantine') emit({ type: 'quarantine', items: q === 'empty' ? [] : [
+          { file: 'q1', title: 'Brave extension: Example Deals', date: '2026-11-15T18:30:00', kind: 'BrowserExtension', path: 'C:\\Users\\user\\AppData\\Local\\BraveSoftware\\Brave-Browser\\User Data\\Default\\Extensions\\abcdefghijklmnopabcdefghijklmnop', folder: true },
+          { file: 'q2', title: 'svchost.exe', date: '2026-11-15T18:31:00', kind: 'QuarantineFile', path: 'C:\\Users\\user\\AppData\\Roaming\\svchost.exe', folder: false }] });
+        if (m.type === 'purge') emit({ type: 'notice', text: 'Demo: nothing was deleted.', ok: true });
         if (m.type === 'startScan') runDemo(7);
         if (m.type === 'cancelScan') setTimeout(function () { emit({ type: 'engine', event: { type: 'scan.cancelled', data: {} } }); }, 600);
         if (m.type === 'history') emit({ type: 'history', items: recent.map(function (r, i) { return Object.assign({ jsonPath: 'demo-' + i }, r); }) });

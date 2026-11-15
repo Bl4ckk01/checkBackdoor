@@ -21,6 +21,7 @@ function Invoke-CheckAccounts {
         if ($v.Value -eq 0) { $hidden[$v.Name.ToLower()] = $true }
     }
 
+    $mySid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     foreach ($u in Get-LocalUser -ErrorAction SilentlyContinue) {
         Add-InventoryItem $cat "User | $($u.Name)" "Enabled=$($u.Enabled)"
         if (-not $u.Enabled) { continue }
@@ -42,7 +43,10 @@ function Invoke-CheckAccounts {
             if (-not $sev) { $sev = 'Low' }
         }
         if ($sev) {
-            Add-Finding -Category $cat -Severity $sev -Title "Account: $($u.Name)$(if ($isAdmin) { ' (administrator)' })" `
+            # Never the account in use: you would lock yourself out
+            $remedy = $null
+            if ($u.SID.Value -ne $mySid -and $u.Name -ne $env:USERNAME) { $remedy = @{ Kind = 'Account'; Name = "$($u.Name)"; Sid = $u.SID.Value; Admin = $true } }
+            Add-Finding -Category $cat -Severity $sev -Title "Account: $($u.Name)$(if ($isAdmin) { ' (administrator)' })" -Remedy $remedy `
                 -Evidence "SID $($u.SID); last sign-in: $($u.LastLogon); description: $($u.Description)" -Mitre 'T1136.001' -Reasons $why `
                 -Recommendation 'If you do not recognise the account: Settings > Accounts > Other users, remove it (or from an admin prompt: net user NAME /active:no).'
         }

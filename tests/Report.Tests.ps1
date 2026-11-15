@@ -92,6 +92,35 @@ Describe 'Actions in the report' {
         ([regex]::Matches($html, 'data-act="ignore"')).Count | Should -Be 2
         $html | Should -Match ('class="acts" data-id="' + $with.Id + '"')
     }
+    It 'names the action by kind, offers Delete only for files and Fix all for high and medium risk' {
+        $file = New-TestFinding -Title 'Suspicious file' -Path 'C:\Users\x\AppData\a.exe'
+        $file | Add-Member -NotePropertyName Remedy -NotePropertyValue @{ Kind = 'QuarantineFile'; Path = 'C:\Users\x\AppData\a.exe' }
+        $excl = New-TestFinding -Title 'Exclusion' -Severity 'High'
+        $excl | Add-Member -NotePropertyName Remedy -NotePropertyValue @{ Kind = 'DefenderExclusion'; Type = 'Path'; Value = 'C:\' }
+        $low = New-TestFinding -Title 'Low process' -Severity 'Low'
+        $low | Add-Member -NotePropertyName Remedy -NotePropertyValue @{ Kind = 'Process'; ProcessId = 1234; Path = 'C:\x.exe' }
+        $html = New-HtmlReport -Findings @($file, $excl, $low) -Meta (New-TestMeta)
+        $html | Should -Match '>Quarantine</button>'
+        $html | Should -Match '>Remove exclusion</button>'
+        $html | Should -Match '>End process</button>'
+        ([regex]::Matches($html, 'data-act="delete"')).Count | Should -Be 1
+        # Once, at the top: its number counts the items marked data-fix
+        ([regex]::Matches($html, 'data-act="fixAll"')).Count | Should -Be 1
+        $html | Should -Match 'class="actions"><span class="acts acts-all" data-id="all">'
+        $html | Should -Match 'Fix all \(<span data-fix-count>2</span>\)'
+        ([regex]::Matches($html, '" data-fix>')).Count | Should -Be 2
+        $html | Should -Match 'CheckBackdoor can be wrong'
+    }
+    It 'offers to show a folder when the item is a folder (browser extensions)' {
+        $dir = Join-Path $TestDrive 'ext-folder'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        $html = New-HtmlReport -Findings @((New-TestFinding -Title 'Extension' -Path $dir), (New-TestFinding -Title 'File' -Path 'C:\missing\a.exe')) -Meta (New-TestMeta)
+        $html | Should -Match 'data-act="reveal">Show the folder<'
+        $html | Should -Match 'data-act="reveal">Show the file<'
+    }
+    It 'shows no Fix all when nothing can be fixed' {
+        New-HtmlReport -Findings @(New-TestFinding) -Meta (New-TestMeta) | Should -Not -Match 'data-act="fixAll"'
+    }
     It 'hides the actions outside the app' {
         New-HtmlReport -Findings @(New-TestFinding) -Meta (New-TestMeta) | Should -Match '\.acts\{display:none\}'
     }

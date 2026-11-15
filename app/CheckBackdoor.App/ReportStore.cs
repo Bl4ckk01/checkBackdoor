@@ -68,6 +68,16 @@ public static class ReportStore
         return null;
     }
 
+    /// <summary>The high and medium-risk findings of the report that have an action ("Fix all").</summary>
+    public static List<JsonObject> FixableFindings(string jsonPath)
+    {
+        var list = new List<JsonObject>();
+        if (JsonNode.Parse(File.ReadAllText(jsonPath))?["Findings"] is not JsonArray findings) return list;
+        foreach (var f in findings)
+            if (f is JsonObject o && o["Remedy"] is JsonObject && (string?)o["Severity"] is "High" or "Medium") list.Add(o);
+        return list;
+    }
+
     /// <summary>
     /// What changed between two scans: new and resolved findings (by ID), items installed
     /// and removed (inventory). Network connections change all the time and are left out;

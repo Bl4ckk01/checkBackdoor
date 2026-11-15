@@ -13,7 +13,8 @@ namespace CheckBackdoor.App;
 /// </summary>
 public static class ActionRunner
 {
-    public static Task<JsonObject> DisableAsync(JsonObject request, bool admin)
+    /// <summary>One request, or a list of requests ("Fix all": one Windows prompt for all).</summary>
+    public static Task<JsonObject> DisableAsync(JsonNode request, bool admin)
     {
         Directory.CreateDirectory(AppPaths.RunsDir);
         var req = Path.Combine(AppPaths.RunsDir, $"action-{Guid.NewGuid():N}.json");
@@ -27,6 +28,10 @@ public static class ActionRunner
 
     public static Task<JsonObject> UndoAsync(string backupFile) =>
         RunAsync(["-BackupFile", backupFile], BackupStore.NeedsAdmin(backupFile), null);
+
+    /// <summary>Deletes for good an item in quarantine, with its backup.</summary>
+    public static Task<JsonObject> PurgeAsync(string backupFile) =>
+        RunAsync(["-BackupFile", backupFile, "-Purge"], BackupStore.NeedsAdmin(backupFile), null);
 
     static async Task<JsonObject> RunAsync(string[] args, bool admin, string? cleanup)
     {

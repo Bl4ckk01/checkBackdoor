@@ -148,6 +148,42 @@ public static class BackupStore
         return list;
     }
 
+    /// <summary>
+    /// What is in quarantine: files and browser extensions moved away by "Disable",
+    /// "Quarantine" or "Remove extension", not put back yet and still there next to the backup.
+    /// </summary>
+    public static JsonArray Quarantine()
+    {
+        var list = new JsonArray();
+        foreach (var dir in new[] { AppPaths.BackupDir, AppPaths.ProtectedBackupDir }.Where(Directory.Exists))
+        {
+            FileInfo[] files;
+            try { files = new DirectoryInfo(dir).GetFiles("*.json"); } catch (Exception) { continue; }
+            foreach (var f in files.OrderByDescending(f => f.Name))
+            {
+                try
+                {
+                    if (JsonNode.Parse(File.ReadAllText(f.FullName)) is not JsonObject b || (string?)b["Schema"] != "checkbackdoor.backup/1") continue;
+                    if (b["Undone"]?.GetValue<bool>() == true) continue;
+                    var kind = (string?)b["Remedy"]?["Kind"];
+                    var moved = kind switch { "File" or "QuarantineFile" => Path.ChangeExtension(f.FullName, ".file"), "BrowserExtension" => Path.ChangeExtension(f.FullName, ".ext"), _ => null };
+                    if (moved is null || !(File.Exists(moved) || Directory.Exists(moved))) continue;
+                    list.Add(new JsonObject
+                    {
+                        ["file"] = f.FullName,
+                        ["title"] = (string?)b["Title"],
+                        ["date"] = (string?)b["Date"],
+                        ["kind"] = kind,
+                        ["path"] = (string?)b["Remedy"]?["Path"],
+                        ["folder"] = Directory.Exists(moved),
+                    });
+                }
+                catch (Exception) { }
+            }
+        }
+        return list;
+    }
+
     /// <summary>True if the file is a backup in one of the two CheckBackdoor folders.</summary>
     public static bool IsBackupFile(string? file) =>
         AppPaths.IsInside(file, AppPaths.BackupDir) || AppPaths.IsInside(file, AppPaths.ProtectedBackupDir);

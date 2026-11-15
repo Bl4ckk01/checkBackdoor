@@ -192,7 +192,199 @@ Describe 'File in the Startup folder' {
     }
 }
 
+Describe 'Suspicious files: quarantine and delete' {
+    BeforeAll {
+        # The real folders (AppData, ProgramData...) are replaced by a test folder
+        $script:DefaultQuarantineRoot = $script:QuarantineRootPattern
+        $script:QuarantineRootPattern = '(?i)^' + [regex]::Escape((Join-Path $TestDrive 'q')) + '\\'
+        $script:QDir = Join-Path $TestDrive 'q\AppData\Tool'
+        New-Item -ItemType Directory -Path $script:QDir -Force | Out-Null
+        function New-SuspiciousFile([string]$Name) {
+            $f = Join-Path $script:QDir $Name
+            Set-Content -LiteralPath $f -Value "content of $Name"
+            return $f
+        }
+    }
+    AfterAll { $script:QuarantineRootPattern = $script:DefaultQuarantineRoot }
+    It 'quarantines the file and Undo puts it back' {
+        $f = New-SuspiciousFile 'tool.exe'
+        $sha = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash
+        $done = Invoke-RemedyDisable -Request (New-Request @{ Kind = 'QuarantineFile'; Path = $f; Sha256 = $sha }) -BackupDir $script:Backups
+        Test-Path -LiteralPath $f | Should -BeFalse
+        Invoke-RemedyUndo -BackupFile $done.BackupFile | Out-Null
+        Get-Content -LiteralPath $f | Should -Be 'content of tool.exe'
+    }
+    It 'deletes for good a quarantined file, read-only too, with its backup' {
+        $f = New-SuspiciousFile 'purge.exe'
+        $done = Invoke-RemedyDisable -Request (New-Request @{ Kind = 'QuarantineFile'; Path = $f }) -BackupDir $script:Backups
+        $moved = [IO.Path]::ChangeExtension($done.BackupFile, '.file')
+        (Get-Item -LiteralPath $moved).IsReadOnly = $true
+        Invoke-RemedyPurge -BackupFile $done.BackupFile | Out-Null
+        Test-Path -LiteralPath $moved | Should -BeFalse
+        Test-Path -LiteralPath $done.BackupFile | Should -BeFalse
+    }
+    It 'does not move a file that changed after the scan' {
+        $f = New-SuspiciousFile 'changed.exe'
+        { Invoke-RemedyDisable -Request (New-Request @{ Kind = 'QuarantineFile'; Path = $f; Sha256 = ('A' * 64) }) -BackupDir $script:Backups } | Should -Throw '*changed after the scan*'
+        Test-Path -LiteralPath $f | Should -BeTrue
+    }
+    It 'deletes the file for good when asked, leaving no backup' {
+        $f = New-SuspiciousFile 'gone.exe'
+        $req = New-Request @{ Kind = 'QuarantineFile'; Path = $f; Sha256 = (Get-FileHash -LiteralPath $f -Algorithm SHA256).Hash }
+        $req | Add-Member -NotePropertyName Mode -NotePropertyValue 'Delete'
+        $done = Invoke-RemedyDisable -Request $req -BackupDir $script:Backups
+        Test-Path -LiteralPath $f | Should -BeFalse
+        $done.BackupFile | Should -BeNullOrEmpty
+    }
+    It 'deletes only files' {
+        $req = New-Request @{ Kind = 'RegistryValue'; Key = $script:TestKey; Name = 'x' }
+        $req | Add-Member -NotePropertyName Mode -NotePropertyValue 'Delete'
+        { Invoke-RemedyDisable -Request $req -BackupDir $script:Backups } | Should -Throw '*Only files*'
+    }
+    It 'rejects files outside the checked folders and other extensions' {
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'QuarantineFile'; Path = 'C:\Windows\System32\notepad.exe' }) | Should -Match 'Only executables'
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'QuarantineFile'; Path = (Join-Path $script:QDir 'notes.txt') }) | Should -Match 'Only executables'
+    }
+    It 'does not go through a link to another folder' {
+        $real = Join-Path $TestDrive 'elsewhere'
+        New-Item -ItemType Directory -Path $real -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $real 'a.exe') -Value 'x'
+        $link = Join-Path $script:QDir 'link'
+        New-Item -ItemType Junction -Path $link -Target $real | Out-Null
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'QuarantineFile'; Path = (Join-Path $link 'a.exe') }) | Should -Match 'link'
+    }
+}
+
+Describe 'Browser extensions' {
+    BeforeAll {
+        function New-TestExtension([string]$Name) {
+            $dir = Join-Path $TestDrive "ext\$Name"
+            New-Item -ItemType Directory -Path (Join-Path $dir '1.0_0') -Force | Out-Null
+            Set-Content -LiteralPath (Join-Path $dir '1.0_0\manifest.json') -Value '{ "name": "Test" }'
+            return $dir
+        }
+        function New-ExtRequest([string]$Dir) { New-Request @{ Kind = 'BrowserExtension'; Path = $Dir; Browser = 'Vivaldi'; Exe = 'vivaldi'; Id = 'abc' } }
+        Mock Get-Process { $null } -ParameterFilter { $Name -eq 'vivaldi' }
+    }
+    It 'moves the extension folder away and Undo puts it back' {
+        $dir = New-TestExtension 'moved'
+        $done = Invoke-RemedyDisable -Request (New-ExtRequest $dir) -BackupDir $script:Backups
+        Test-Path -LiteralPath $dir | Should -BeFalse
+        Invoke-RemedyUndo -BackupFile $done.BackupFile | Out-Null
+        Test-Path -LiteralPath (Join-Path $dir '1.0_0\manifest.json') | Should -BeTrue
+    }
+    It 'deletes the extension folder for good when asked' {
+        $dir = New-TestExtension 'deleted'
+        $req = New-ExtRequest $dir
+        $req | Add-Member -NotePropertyName Mode -NotePropertyValue 'Delete'
+        (Invoke-RemedyDisable -Request $req -BackupDir $script:Backups).BackupFile | Should -BeNullOrEmpty
+        Test-Path -LiteralPath $dir | Should -BeFalse
+    }
+    It 'does not touch a folder that is not an extension' {
+        $dir = Join-Path $TestDrive 'ext\notext'
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        { Invoke-RemedyDisable -Request (New-ExtRequest $dir) -BackupDir $script:Backups } | Should -Throw '*manifest.json*'
+        Test-Path -LiteralPath $dir | Should -BeTrue
+    }
+    It 'refuses system folders and whole user profiles' {
+        Test-ExtensionPath 'C:\Windows\System32\drivers' | Should -Match 'Only the folder'
+        Test-ExtensionPath 'C:\Users\someone' | Should -Match 'Only the folder'
+        Test-ExtensionPath 'C:\Program Files\Browser\ext' | Should -Match 'Only the folder'
+    }
+    It 'deletes for good an extension in quarantine, with its backup' {
+        $dir = New-TestExtension 'purged'
+        $done = Invoke-RemedyDisable -Request (New-ExtRequest $dir) -BackupDir $script:Backups
+        $moved = [IO.Path]::ChangeExtension($done.BackupFile, '.ext')
+        Test-Path -LiteralPath $moved | Should -BeTrue
+        Invoke-RemedyPurge -BackupFile $done.BackupFile | Out-Null
+        Test-Path -LiteralPath $moved | Should -BeFalse
+        Test-Path -LiteralPath $done.BackupFile | Should -BeFalse
+    }
+    It 'does not follow a link inside the extension while deleting it' {
+        $outside = Join-Path $TestDrive 'outside'
+        New-Item -ItemType Directory -Path $outside -Force | Out-Null
+        Set-Content -LiteralPath (Join-Path $outside 'precious.txt') -Value 'keep me'
+        $dir = New-TestExtension 'withlink'
+        New-Item -ItemType Junction -Path (Join-Path $dir 'link') -Target $outside | Out-Null
+        $done = Invoke-RemedyDisable -Request (New-ExtRequest $dir) -BackupDir $script:Backups
+        Invoke-RemedyPurge -BackupFile $done.BackupFile | Out-Null
+        Get-Content -LiteralPath (Join-Path $outside 'precious.txt') | Should -Be 'keep me'
+    }
+    It 'has nothing to delete after Restore' {
+        $dir = New-TestExtension 'restored'
+        $done = Invoke-RemedyDisable -Request (New-ExtRequest $dir) -BackupDir $script:Backups
+        Invoke-RemedyUndo -BackupFile $done.BackupFile | Out-Null
+        { Invoke-RemedyPurge -BackupFile $done.BackupFile } | Should -Throw '*already put back*'
+        Test-Path -LiteralPath (Join-Path $dir '1.0_0\manifest.json') | Should -BeTrue
+    }
+    It 'asks to close the browser first' {
+        Mock Get-Process { [pscustomobject]@{ Name = 'vivaldi' } } -ParameterFilter { $Name -eq 'vivaldi' }
+        $dir = New-TestExtension 'open'
+        { Invoke-RemedyDisable -Request (New-ExtRequest $dir) -BackupDir $script:Backups } | Should -Throw '*Close Vivaldi first*'
+        Test-Path -LiteralPath $dir | Should -BeTrue
+    }
+}
+
+Describe 'Processes, exclusions, accounts and certificates' {
+    It 'does not end a Windows program or CheckBackdoor itself' {
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'Process'; ProcessId = 1234; Path = "$env:SystemRoot\System32\notepad.exe" }) | Should -Match 'Windows program'
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'Process'; ProcessId = $PID; Path = 'C:\x.exe' }) | Should -Match 'Invalid process'
+    }
+    It 'does not end a process whose number now belongs to another program' {
+        { Stop-RemedyProcess ([pscustomobject]@{ Kind = 'Process'; ProcessId = $PID; Path = 'C:\other\x.exe' }) } | Should -Throw '*another program*'
+    }
+    It 'accepts only known kinds of Defender exclusion' {
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'DefenderExclusion'; Type = 'Path'; Value = 'C:\Games' }) | Should -BeNullOrEmpty
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'DefenderExclusion'; Type = 'Registry'; Value = 'x' }) | Should -Match 'Unknown kind of exclusion'
+    }
+    It 'never disables the account in use, nor groups' {
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'Account'; Sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }) | Should -Match 'account you are using'
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'Account'; Sid = 'S-1-5-32-544' }) | Should -Match 'local accounts'
+    }
+    It 'checks the thumbprint and the store of a certificate' {
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'RootCertificate'; Store = 'Machine'; Thumbprint = '12AB' }) | Should -Match 'Invalid certificate'
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'RootCertificate'; Store = 'Other'; Thumbprint = ('A' * 40) }) | Should -Match 'Unknown certificate store'
+        Test-RemedyAllowed ([pscustomobject]@{ Kind = 'RootCertificate'; Store = 'Machine'; Thumbprint = ('A' * 40) }) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Root certificate of a user' {
+    BeforeAll {
+        # A test key instead of the real root store of the user
+        Mock Get-UserRootKey { "HKCU:\Software\CheckBackdoorTest\Certs\$Thumbprint" }
+    }
+    It 'removes it keeping its content and puts it back with Undo' {
+        $tp = 'AB' * 20
+        $key = "HKCU:\Software\CheckBackdoorTest\Certs\$tp"
+        New-Item -Path $key -Force | Out-Null
+        New-ItemProperty -LiteralPath $key -Name Blob -PropertyType Binary -Value ([byte[]](1, 2, 3, 4)) -Force | Out-Null
+        $sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+        $done = Invoke-RemedyDisable -Request (New-Request @{ Kind = 'RootCertificate'; Store = 'User'; Sid = $sid; Thumbprint = $tp }) -BackupDir $script:Backups
+        Test-Path -LiteralPath $key | Should -BeFalse
+        Invoke-RemedyUndo -BackupFile $done.BackupFile | Out-Null
+        @([byte[]](Get-ItemPropertyValue -LiteralPath $key -Name Blob)) | Should -Be @(1, 2, 3, 4)
+    }
+}
+
 Describe 'Actions.ps1' -Tag 'E2E' {
+    It 'carries out a list of requests ("Fix all") one by one and reports each' {
+        New-Item -Path $script:TestKey -Force | Out-Null
+        New-ItemProperty -LiteralPath $script:TestKey -Name 'Batch' -Value 'C:\x.exe' -Force | Out-Null
+        $req = Join-Path $TestDrive 'request-batch.json'
+        $res = Join-Path $TestDrive 'result-batch.json'
+        $list = @((New-Request @{ Kind = 'RegistryValue'; Key = $script:TestKey; Name = 'Batch' } 'One'), (New-Request @{ Kind = 'File'; Path = 'C:\Windows\win.ini' } 'Two'))
+        ConvertTo-Json -InputObject $list -Depth 5 | Set-Content -LiteralPath $req
+        & powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $script:ProjectRoot 'Actions.ps1') -RequestFile $req -BackupDir $script:Backups -ResultFile $res
+        $LASTEXITCODE | Should -Be 0
+        $out = Get-Content -LiteralPath $res -Raw | ConvertFrom-Json
+        @($out.items) | Should -HaveCount 2
+        $out.items[0].ok | Should -BeTrue
+        $out.items[1].ok | Should -BeFalse
+        $out.message | Should -Be 'Fixed 1 of 2.'
+        (Get-Item -LiteralPath $script:TestKey).GetValueNames() | Should -Not -Contain 'Batch'
+        Test-Path -LiteralPath 'C:\Windows\win.ini' | Should -BeTrue
+        Remove-Item -LiteralPath $out.items[0].backupFile -Force -ErrorAction SilentlyContinue
+    }
     It 'runs Disable and Undo from the command line and writes the result' {
         New-Item -Path $script:TestKey -Force | Out-Null
         New-ItemProperty -LiteralPath $script:TestKey -Name 'FromCli' -Value 'C:\x.exe' -Force | Out-Null

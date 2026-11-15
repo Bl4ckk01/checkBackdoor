@@ -3,6 +3,14 @@
 
 $script:SeverityOrder = @{ 'High' = 0; 'Medium' = 1; 'Low' = 2; 'Info' = 3 }
 $script:ChangesCategory = 'Changes since the previous scan'
+# Text of the action button of each kind of item (the app carries them out: Actions.ps1)
+$script:RemedyLabels = @{
+    RegistryValue = 'Disable'; File = 'Disable'; ScheduledTask = 'Disable'; Service = 'Disable'
+    QuarantineFile = 'Quarantine'; Process = 'End process'; DefenderExclusion = 'Remove exclusion'
+    Account = 'Disable account'; RootCertificate = 'Remove certificate'; BrowserExtension = 'Remove extension'
+}
+# Kinds that can also be deleted for good ("Delete", and "Fix all")
+$script:DeletableKinds = @('File', 'QuarantineFile', 'BrowserExtension')
 
 # Applies the allowlist to findings already collected. During a scan the list is
 # loaded first (Import-Allowlist) and Add-Finding drops matches by itself.
@@ -281,8 +289,11 @@ h1{font:600 24px/30px var(--font-d);letter-spacing:-.01em}
 .act{height:32px;padding:0 12px;border:1px solid var(--control);border-radius:var(--radius-c);background:var(--surface);color:var(--text);font:inherit;font-size:13px;cursor:pointer}
 .act:hover{background:var(--raised);border-color:var(--muted)}
 .act-main{border-color:var(--text)}
+.act-danger{border-color:var(--p-high);color:var(--p-high)}
 .act:disabled{opacity:.55;cursor:default}
 .act-done{color:var(--muted);font-size:13px}
+.embedded .acts-all{margin:0;flex-wrap:nowrap}
+.acts-all .act-done:empty{display:none}
 .todo{margin:14px 0 0;padding:10px 12px;border-radius:var(--radius-c);background:var(--raised);max-width:78ch}
 .todo b{font-weight:600}
 .empty{margin:0;padding:28px 16px;color:var(--muted);text-align:center}
@@ -428,10 +439,22 @@ $script:ReportJs = @'
     });
     window.addEventListener('message', function (e) {
       if (e.origin !== APP || !e.data || e.data.source !== 'checkbackdoor-app') return;
-      var box = d.querySelector('.acts[data-id="' + String(e.data.id).replace(/[^0-9a-f]/g, '') + '"]');
+      var id = e.data.id === 'all' ? 'all' : String(e.data.id).replace(/[^0-9a-f]/g, '');
+      var box = d.querySelector('.acts[data-id="' + id + '"]');
       if (!box) return;
       box.querySelector('.act-done').textContent = e.data.text || '';
-      if (e.data.done) [].slice.call(box.querySelectorAll('[data-act="' + e.data.action + '"]')).forEach(function (x) { x.disabled = true; });
+      // A disabled or deleted item cannot be disabled or deleted again
+      var acts = /^(disable|delete|fixAll)$/.test(e.data.action) ? ['disable', 'delete', 'fixAll'] : [String(e.data.action).replace(/[^A-Za-z]/g, '')];
+      var sel = acts.map(function (a) { return '[data-act=' + a + ']'; }).join(',');
+      if (e.data.done) [].slice.call(box.querySelectorAll(sel)).forEach(function (x) { x.disabled = true; });
+      // One item less in "Fix all" when it is fixed (or ignored) on its own
+      if (e.data.done && /^(disable|delete|ignore)$/.test(e.data.action) && box.hasAttribute('data-fix')) {
+        box.removeAttribute('data-fix');
+        var left = d.querySelectorAll('.acts[data-fix]').length;
+        var n = d.querySelector('[data-fix-count]');
+        if (n) n.textContent = left;
+        if (!left) [].slice.call(d.querySelectorAll('.acts-all .act')).forEach(function (x) { x.disabled = true; });
+      }
     });
   }
 })();
@@ -516,8 +539,15 @@ function New-HtmlReport {
     if ($Meta.OS) { $subParts += $Meta.OS }
     if ($Meta.Deep) { $subParts += 'deep scan' }
     & $add "<main class=""page""><div class=""title-row""><div><h1>$(& $e $title)</h1><p class=""sub"">$(($subParts | ForEach-Object { & $e $_ }) -join ' &middot; ')</p></div>"
-    if ($Meta.Files) {
-        & $add "<div class=""actions""><a class=""btn"" href=""$(& $e $Meta.Files.Json)"">$($script:Icons.File)JSON data</a><a class=""btn"" href=""$(& $e $Meta.Files.Csv)"">$($script:Icons.File)CSV table</a></div>"
+    # "Fix all": once, top right, inside the app only; the number goes down as items are fixed
+    $fixable = @($Findings | Where-Object { $_.Remedy -and $_.Severity -in 'High', 'Medium' }).Count
+    $fixAll = ''
+    if ($fixable) {
+        $fixAll = "<span class=""acts acts-all"" data-id=""all""><span class=""act-done"" role=""status""></span><button type=""button"" class=""act act-danger"" data-act=""fixAll"" title=""Disables the items at high or medium risk and deletes the suspicious files and extensions. CheckBackdoor can be wrong: check them first."">Fix all (<span data-fix-count>$fixable</span>)</button></span>"
+    }
+    if ($Meta.Files -or $fixAll) {
+        $files = if ($Meta.Files) { "<a class=""btn"" href=""$(& $e $Meta.Files.Json)"">$($script:Icons.File)JSON data</a><a class=""btn"" href=""$(& $e $Meta.Files.Csv)"">$($script:Icons.File)CSV table</a>" } else { '' }
+        & $add "<div class=""actions"">$fixAll$files</div>"
     }
     & $add '</div>'
 
@@ -629,10 +659,20 @@ function New-HtmlReport {
         if ($f.Recommendation) { & $add "<p class=""todo""><b>What to do.</b> $(& $e $f.Recommendation)</p>" }
         # Actions: visible only inside the app, which carries them out (the report alone stays read-only)
         $acts = @()
-        if ($f.Path -and [IO.Path]::IsPathRooted($f.Path)) { $acts += '<button type="button" class="act" data-act="reveal">Show the file</button>' }
-        if ($f.Remedy) { $acts += '<button type="button" class="act act-main" data-act="disable">Disable</button>' }
+        if ($f.Path -and [IO.Path]::IsPathRooted($f.Path)) {
+            $what = if (Test-Path -LiteralPath $f.Path -PathType Container -ErrorAction SilentlyContinue) { 'folder' } else { 'file' }
+            $acts += "<button type=""button"" class=""act"" data-act=""reveal"">Show the $what</button>"
+        }
+        if ($f.Remedy) {
+            $kind = "$($f.Remedy.Kind)"
+            $btn = if ($script:RemedyLabels.ContainsKey($kind)) { $script:RemedyLabels[$kind] } else { 'Disable' }
+            $acts += "<button type=""button"" class=""act act-main"" data-act=""disable"">$btn</button>"
+            if ($kind -in $script:DeletableKinds) { $acts += '<button type="button" class="act act-danger" data-act="delete">Delete</button>' }
+        }
         if ($f.Severity -ne 'Info') { $acts += '<button type="button" class="act" data-act="ignore">Ignore in future scans</button>' }
-        if ($acts) { & $add "<div class=""acts"" data-id=""$(& $e $f.Id)"">$($acts -join '')<span class=""act-done"" role=""status""></span></div>" }
+        # data-fix: counted in "Fix all"
+        $fixMark = if ($f.Remedy -and $f.Severity -in 'High', 'Medium') { ' data-fix' } else { '' }
+        if ($acts) { & $add "<div class=""acts"" data-id=""$(& $e $f.Id)""$fixMark>$($acts -join '')<span class=""act-done"" role=""status""></span></div>" }
         & $add '</div></details>'
     }
     & $add '</div>'

@@ -137,7 +137,9 @@ function Test-SuspiciousFile {
     $sev = ConvertTo-Severity $score
     if ($sev -in 'High', 'Medium') {
         $info = Get-FileInfo $path
-        Add-Finding -Category $Category -Severity $sev -Title $File.Name -Path $path -Mitre 'T1036 / T1564' -Reasons $why `
+        # Quarantine (or delete, if asked) from the app: files outside your own profile need the administrator
+        $remedy = @{ Kind = 'QuarantineFile'; Path = $path; Sha256 = $info.Sha256; Admin = -not ($path -like "$env:USERPROFILE\*") }
+        Add-Finding -Category $Category -Severity $sev -Title $File.Name -Path $path -Mitre 'T1036 / T1564' -Reasons $why -Remedy $remedy `
             -Evidence "Size $([math]::Round($File.Length / 1KB)) KB; created $($File.CreationTime.ToString('yyyy-MM-dd HH:mm')); modified $($File.LastWriteTime.ToString('yyyy-MM-dd HH:mm'))" `
             -Sha256 $info.Sha256 -Signer $info.Signer `
             -Recommendation 'Upload the file to virustotal.com. If it is malicious, first remove the autostart entries that launch it, then delete the file.'

@@ -3,12 +3,20 @@
     Disables an item reported by CheckBackdoor after saving a backup, or undoes it.
 
 .DESCRIPTION
-    The app uses it when you choose "Disable" or "Undo". It never deletes anything:
+    The app uses it when you choose "Disable", "Delete", "Fix all" or "Undo":
     - autostart entry in the registry: removed after saving its type and content;
-    - file in the Startup folder: moved into the backup folder;
+    - file in the Startup folder or suspicious file: moved into the backup folder;
     - scheduled task: disabled;
-    - service: set to Disabled and stopped.
-    Every change has a checkbackdoor.backup/1 backup file that allows undoing it.
+    - service: set to Disabled and stopped;
+    - Defender exclusion: removed;
+    - account: disabled;
+    - root certificate: removed after saving it.
+    Every one of these changes has a checkbackdoor.backup/1 backup file that allows undoing it.
+    Two actions cannot be undone: ending a process, and deleting a file (request with
+    "Mode": "Delete", only for files).
+
+    The request file holds one request, or a list of requests ("Fix all"): in that case
+    each one is carried out on its own and the result lists them all.
 
     As administrator, backups go to %ProgramData%\CheckBackdoor\backup, which only
     administrators can write, and only backups in that folder are undone: a backup in the
@@ -23,18 +31,23 @@
     .\Actions.ps1 -RequestFile request.json -BackupDir backup -ResultFile result.json
 .EXAMPLE
     .\Actions.ps1 -BackupFile backup\20261111_120000_ab12cd.json -ResultFile result.json
+.EXAMPLE
+    .\Actions.ps1 -BackupFile backup\20261111_120000_ab12cd.json -Purge -ResultFile result.json
 #>
 [CmdletBinding(DefaultParameterSetName = 'Disable')]
 param(
     [Parameter(Mandatory, ParameterSetName = 'Disable')][string]$RequestFile,
     [Parameter(ParameterSetName = 'Disable')][string]$RequestSha256,
     [Parameter(Mandatory, ParameterSetName = 'Disable')][string]$BackupDir,
-    [Parameter(Mandatory, ParameterSetName = 'Undo')][string]$BackupFile,
+    [Parameter(Mandatory, ParameterSetName = 'Undo')]
+    [Parameter(Mandatory, ParameterSetName = 'Purge')][string]$BackupFile,
+    # Deletes for good the item in quarantine of that backup, and the backup
+    [Parameter(Mandatory, ParameterSetName = 'Purge')][switch]$Purge,
     [Parameter(Mandatory)][string]$ResultFile
 )
 
 $ErrorActionPreference = 'Stop'
-$result = [ordered]@{ ok = $false; message = $null; backupFile = $null; title = $null }
+$result = [ordered]@{ ok = $false; message = $null; backupFile = $null; title = $null; items = $null }
 try {
     foreach ($m in 'Common', 'CommandRisk', 'Remedy') {
         . ([scriptblock]::Create([IO.File]::ReadAllText((Join-Path $PSScriptRoot "modules\$m.ps1"))))
@@ -47,11 +60,35 @@ try {
             try { $actual = (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString('x2') }) -join '') } finally { $sha.Dispose() }
             if ($actual -ne $RequestSha256.ToLowerInvariant()) { throw 'The request changed after you confirmed it: nothing was changed.' }
         }
-        $req = (New-Object Text.UTF8Encoding($false)).GetString($bytes).TrimStart([char]0xFEFF) | ConvertFrom-Json
-        $done = Invoke-RemedyDisable -Request $req -BackupDir $BackupDir
-        $result.backupFile = $done.BackupFile
-        $result.title = $done.Backup.Title
-        $result.message = 'Disabled. You can undo it any time from the settings.'
+        $json = (New-Object Text.UTF8Encoding($false)).GetString($bytes).TrimStart([char]0xFEFF)
+        $parsed = $json | ConvertFrom-Json
+        $undoable = 'Disabled. You can undo it any time from the settings.'
+        if ($json.TrimStart().StartsWith('[')) {
+            # "Fix all": every item on its own, so one failure does not stop the others
+            $items = @()
+            foreach ($req in @($parsed)) {
+                $item = [ordered]@{ findingId = "$($req.FindingId)"; title = "$($req.Title)"; ok = $false; message = $null; backupFile = $null }
+                try {
+                    $done = Invoke-RemedyDisable -Request $req -BackupDir $BackupDir
+                    $item.ok = $true; $item.backupFile = $done.BackupFile
+                    $item.message = if ($done.Message) { $done.Message } else { $undoable }
+                } catch { $item.message = $_.Exception.Message }
+                $items += $item
+            }
+            $okCount = @($items | Where-Object { $_.ok }).Count
+            $result.items = $items
+            $result.message = "Fixed $okCount of $($items.Count)."
+            if (-not $okCount) { throw "Nothing was fixed: $(($items | Select-Object -First 1).message)" }
+        } else {
+            $done = Invoke-RemedyDisable -Request $parsed -BackupDir $BackupDir
+            $result.backupFile = $done.BackupFile
+            $result.title = $done.Backup.Title
+            $result.message = if ($done.Message) { $done.Message } else { $undoable }
+        }
+    } elseif ($Purge) {
+        $b = Invoke-RemedyPurge -BackupFile $BackupFile
+        $result.title = $b.Title
+        $result.message = 'Deleted for good.'
     } else {
         $b = Invoke-RemedyUndo -BackupFile $BackupFile
         $result.backupFile = $BackupFile

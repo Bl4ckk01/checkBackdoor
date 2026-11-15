@@ -5,14 +5,15 @@
 # Only extension metadata is read: never history, cookies or passwords.
 
 $script:ChromiumBrowsers = @(
-    @{ Name = 'Google Chrome'; Local = 'Google\Chrome\User Data'; Page = 'chrome://extensions' }
-    @{ Name = 'Microsoft Edge'; Local = 'Microsoft\Edge\User Data'; Page = 'edge://extensions' }
-    @{ Name = 'Brave'; Local = 'BraveSoftware\Brave-Browser\User Data'; Page = 'brave://extensions' }
-    @{ Name = 'Vivaldi'; Local = 'Vivaldi\User Data'; Page = 'vivaldi://extensions' }
-    @{ Name = 'Chromium'; Local = 'Chromium\User Data'; Page = 'chrome://extensions' }
-    @{ Name = 'Yandex'; Local = 'Yandex\YandexBrowser\User Data'; Page = 'browser://extensions' }
-    @{ Name = 'Opera'; Roaming = 'Opera Software\Opera Stable'; Page = 'opera://extensions' }
-    @{ Name = 'Opera GX'; Roaming = 'Opera Software\Opera GX Stable'; Page = 'opera://extensions' }
+    # Exe: the process to close before removing one of its extensions from the app
+    @{ Name = 'Google Chrome'; Local = 'Google\Chrome\User Data'; Page = 'chrome://extensions'; Exe = 'chrome' }
+    @{ Name = 'Microsoft Edge'; Local = 'Microsoft\Edge\User Data'; Page = 'edge://extensions'; Exe = 'msedge' }
+    @{ Name = 'Brave'; Local = 'BraveSoftware\Brave-Browser\User Data'; Page = 'brave://extensions'; Exe = 'brave' }
+    @{ Name = 'Vivaldi'; Local = 'Vivaldi\User Data'; Page = 'vivaldi://extensions'; Exe = 'vivaldi' }
+    @{ Name = 'Chromium'; Local = 'Chromium\User Data'; Page = 'chrome://extensions'; Exe = 'chrome' }
+    @{ Name = 'Yandex'; Local = 'Yandex\YandexBrowser\User Data'; Page = 'browser://extensions'; Exe = 'browser' }
+    @{ Name = 'Opera'; Roaming = 'Opera Software\Opera Stable'; Page = 'opera://extensions'; Exe = 'opera' }
+    @{ Name = 'Opera GX'; Roaming = 'Opera Software\Opera GX Stable'; Page = 'opera://extensions'; Exe = 'opera' }
 )
 
 # Chromium "location" codes: how the extension got there
@@ -106,8 +107,15 @@ function Get-ProfileRoots {
     return $users
 }
 
+# "Remove extension" from the app: moves its folder (or .xpi) away, the browser must be closed
+function New-ExtensionRemedy {
+    param([string]$Path, [string]$Browser, [string]$Exe, [string]$Id)
+    if (-not $Path -or -not $Exe -or -not [IO.Path]::IsPathRooted($Path) -or -not (Test-Path -LiteralPath $Path)) { return $null }
+    return @{ Kind = 'BrowserExtension'; Path = $Path; Browser = $Browser; Exe = $Exe; Id = $Id; Admin = -not ($Path -like "$env:USERPROFILE\*") }
+}
+
 function Test-ChromiumProfile {
-    param([string]$Browser, [string]$Page, [string]$ProfileDir, [string]$User)
+    param([string]$Browser, [string]$Page, [string]$ProfileDir, [string]$User, [string]$Exe)
     $cat = 'Browsers'
     $settings = @{}
     foreach ($file in 'Preferences', 'Secure Preferences') {
@@ -181,7 +189,7 @@ function Test-ChromiumProfile {
         if ($sev -in 'Info', 'Low') { continue }
         $evidence = "ID $id" + $(if ($version) { " · version $version" }) + " · $locText" + $(if ($installed) { " · installed on $($installed.ToString('yyyy-MM-dd'))" })
         Add-Finding -Category $cat -Severity $sev -Title "$Browser extension: $name" -Detail "Profile $profileName of $User" `
-            -Path $dir -Evidence $evidence -Mitre 'T1176' -Reasons $why `
+            -Path $dir -Evidence $evidence -Mitre 'T1176' -Reasons $why -Remedy (New-ExtensionRemedy $dir $Browser $Exe $id) `
             -Recommendation "Open $Page in the browser and check the extension (the ID shows up once you turn on developer mode). If you did not install it, remove it; if the Remove button is locked, first delete the policy that forces it (see the other browser findings). Then change the passwords of the sites you were signed in to."
     }
 }
@@ -212,6 +220,7 @@ function Test-FirefoxProfiles {
                 if ($sev -in 'Info', 'Low') { continue }
                 Add-Finding -Category $cat -Severity $sev -Title "Firefox extension: $name" -Detail "Profile $($prof.Name) of $($u.User)" `
                     -Path $a['path'] -Evidence "ID $($a['id']) · version $($a['version'])" -Mitre 'T1176' -Reasons $why `
+                    -Remedy (New-ExtensionRemedy ([string]$a['path']) 'Firefox' 'firefox' ([string]$a['id'])) `
                     -Recommendation 'Open about:addons in Firefox and remove the extension if you did not install it, then change the passwords of the sites you were signed in to.'
             }
         }
@@ -383,7 +392,7 @@ function Invoke-CheckBrowser {
                 if ($d.Name -in 'System Profile', 'Guest Profile') { continue }
                 if (Test-Path -LiteralPath (Join-Path $d.FullName 'Preferences')) { $profiles += $d.FullName }
             }
-            foreach ($pd in $profiles) { Test-ChromiumProfile -Browser $b.Name -Page $b.Page -ProfileDir $pd -User $u.User }
+            foreach ($pd in $profiles) { Test-ChromiumProfile -Browser $b.Name -Page $b.Page -ProfileDir $pd -User $u.User -Exe $b.Exe }
         }
     }
     Test-FirefoxProfiles $users

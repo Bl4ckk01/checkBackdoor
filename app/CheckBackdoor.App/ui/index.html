@@ -18,6 +18,7 @@
   <nav class="nav" aria-label="Sections">
     <button class="nav-b" type="button" data-nav="home" aria-current="page">Scan</button>
     <button class="nav-b" type="button" data-nav="history">History</button>
+    <button class="nav-b" type="button" data-nav="backup" id="nav-backup" hidden>Backup<span class="nav-n" id="nav-backup-n"></span></button>
     <button class="nav-b" type="button" data-nav="settings">Settings</button>
   </nav>
   <button class="theme" type="button" id="theme" aria-label="Change theme"><svg class="ico i-moon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 9.5A5.5 5.5 0 0 1 6.5 2.5a5.5 5.5 0 1 0 7 7z"/></svg><svg class="ico i-sun" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="3"/><path d="M8 1v1.5M8 13.5V15M1 8h1.5M13.5 8H15M3 3l1 1M12 12l1 1M3 13l1-1M12 4l1-1"/></svg></button>
@@ -113,6 +114,17 @@
     <section class="list" aria-labelledby="cmp-add-h"><div class="list-head"><h2 id="cmp-add-h">Items added or changed<span class="count" id="cmp-add-n">0</span></h2></div><div id="cmp-add"></div></section>
     <section class="list" aria-labelledby="cmp-rem-h"><div class="list-head"><h2 id="cmp-rem-h">Items removed<span class="count" id="cmp-rem-n">0</span></h2></div><div id="cmp-rem"></div></section>
   </div>
+</main>
+
+<!-- BACKUP (quarantine) -->
+<main class="page view" id="view-backup" hidden>
+  <div class="title-row">
+    <div><h1>Backup</h1><p class="sub">Files and browser extensions moved away from the results. Here they cannot run: restore one if it was a false positive, or delete it for good.</p></div>
+  </div>
+  <section class="panel q-panel" aria-labelledby="q-h">
+    <h2 id="q-h">In quarantine<span class="count" id="q-count">0</span></h2>
+    <ul class="slist qlist" id="qlist"></ul>
+  </section>
 </main>
 
 <!-- SETTINGS -->

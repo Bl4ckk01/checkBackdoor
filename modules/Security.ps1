@@ -46,9 +46,14 @@ function Invoke-CheckSecurity {
         foreach ($e in @($pref.ExclusionIpAddress)) { if ($e) { $exclusions += [pscustomobject]@{ Type = 'IP address'; Value = $e } } }
     }
     # Exclusions set through Group Policy live here
+    $typeOf = @{ Path = 'Path'; Paths = 'Path'; Process = 'Process'; Processes = 'Process'; Extension = 'Extension'; Extensions = 'Extension'; 'IP address' = 'IpAddress'; IpAddresses = 'IpAddress' }
+    $byPolicy = @{}
     foreach ($t in 'Paths', 'Processes', 'Extensions', 'IpAddresses') {
         foreach ($base in 'HKLM:\SOFTWARE\Policies\Microsoft\Windows Defender\Exclusions', 'HKLM:\SOFTWARE\Microsoft\Windows Defender\Exclusions') {
-            foreach ($v in Get-RegValues "$base\$t") { $exclusions += [pscustomobject]@{ Type = $t; Value = $v.Name } }
+            foreach ($v in Get-RegValues "$base\$t") {
+                $exclusions += [pscustomobject]@{ Type = $t; Value = $v.Name }
+                if ($base -like '*\Policies\*') { $byPolicy["$($typeOf[$t])|$($v.Name)".ToLowerInvariant()] = $true }
+            }
         }
     }
     $hiddenByPerm = $exclusions | Where-Object { $_.Value -match '^N/A' }
@@ -67,8 +72,14 @@ function Invoke-CheckSecurity {
             $v -match '(?i)\\(powershell|cmd|wscript|cscript|mshta|rundll32|regsvr32|svchost|explorer)\.exe$') {
             $sev = 'High'; $why += 'A very broad exclusion, or one on a system program: exactly what miners and RATs bundled with cracks do.'
         }
+        # A policy exclusion comes back with the policy: it is removed from the policy, not from here
+        $kind = $typeOf["$($e.Type)"]
+        $remedy = $null
+        if ($kind -and -not $byPolicy.ContainsKey("$kind|$($e.Value)".ToLowerInvariant())) {
+            $remedy = @{ Kind = 'DefenderExclusion'; Type = $kind; Value = "$($e.Value)"; Admin = $true }
+        }
         Add-Finding -Category $cat -Severity $sev -Title "Defender exclusion ($($e.Type)): $($e.Value)" -Evidence $e.Value -Mitre 'T1562.001' `
-            -Reasons $why -Recommendation "If you did not add it: Windows Security > Virus & threat protection > Manage settings > Exclusions, remove it, then run a FULL scan and a 'Microsoft Defender Offline' scan."
+            -Remedy $remedy -Reasons $why -Recommendation "If you did not add it: Windows Security > Virus & threat protection > Manage settings > Exclusions, remove it, then run a FULL scan and a 'Microsoft Defender Offline' scan."
     }
 
     # Defender turned off through policies (registry)

@@ -30,7 +30,10 @@ function Invoke-CheckCertificates {
             if ($cert) { $subject = $cert.Subject }
             Add-InventoryItem $cat "User root | $($hu.User)" $subject
             if ($subject -match $knownCa) { continue }
-            Add-Finding -Category $cat -Severity 'Medium' -Title "Root certificate installed by the user: $subject" -Detail $p `
+            $sid = if ($hu.Root -match '^HKU:\\(S-1-5-21-[\d\-]+)$') { $Matches[1] } else { [Security.Principal.WindowsIdentity]::GetCurrent().User.Value }
+            $remedy = $null
+            if ($k.PSChildName -match '^[0-9A-Fa-f]{40}$') { $remedy = @{ Kind = 'RootCertificate'; Store = 'User'; Sid = $sid; Thumbprint = $k.PSChildName; Admin = $true } }
+            Add-Finding -Category $cat -Severity 'Medium' -Title "Root certificate installed by the user: $subject" -Detail $p -Remedy $remedy `
                 -Evidence "Thumbprint $($k.PSChildName)$(if ($cert) { "; valid from $($cert.NotBefore.ToString('yyyy-MM-dd')) to $($cert.NotAfter.ToString('yyyy-MM-dd'))" })" `
                 -Mitre 'T1553.004' `
                 -Reasons 'A root certificate lets whoever owns it intercept HTTPS traffic. Normal only for antivirus with HTTPS scanning, Fiddler/Burp, company VPNs.' `
@@ -47,7 +50,7 @@ function Invoke-CheckCertificates {
         if ($c.Subject -match '(?i)(localhost|DO_NOT_TRUST|proxy|mitm|fiddler|burp|charles|test|^CN=[^,=]{1,3}$)') { $sev = 'Medium'; $why += 'The name suggests an interception proxy or a test certificate.' }
         if ($c.NotBefore -gt (Get-Date).AddDays(-180)) { $why += "Created recently ($($c.NotBefore.ToString('yyyy-MM-dd')))." }
         Add-Finding -Category $cat -Severity $sev -Title "Uncommon root certificate: $($c.Subject)" -Evidence "Thumbprint $($c.Thumbprint); issued by $($c.Issuer)" `
-            -Mitre 'T1553.004' -Reasons $why `
+            -Remedy @{ Kind = 'RootCertificate'; Store = 'Machine'; Thumbprint = $c.Thumbprint; Admin = $true } -Mitre 'T1553.004' -Reasons $why `
             -Recommendation 'Search the name online: many are legitimate (drivers, antivirus, company software). Remove from certlm.msc only those you do not recognise.'
     }
 }

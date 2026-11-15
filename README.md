@@ -3,8 +3,9 @@
 A Windows scanner that looks for **backdoors, RATs, cryptominers and other signs of compromise**,
 made for people who downloaded executables, cracks or games from unofficial sources.
 
-- **Read-only scan**: the scan does not change, delete or quarantine anything. The app disables
-  an item only if you ask, always with a backup and an Undo button.
+- **Read-only scan**: the scan does not change, delete or quarantine anything. The app fixes
+  an item only if you ask: almost always with a backup and an Undo button, and it deletes a
+  file only when you choose "Delete" or "Fix all", after a warning.
 - **The script needs no installation**: it uses PowerShell 5.1, already present in every
   Windows 10/11.
 - **No data sent** to the internet (except hashes, and only if you turn on VirusTotal).
@@ -66,9 +67,22 @@ In `app\` there is the Windows app. It offers:
 - the results with the same look as the report, with an action on each finding:
   - **Show the file** in File Explorer;
   - **Ignore in future scans** (restored from the settings);
-  - **Disable**, for startup entries, files in the Startup folder, scheduled tasks and
-    services. It never deletes anything: it saves a backup first, and **Undo** puts everything
-    back as it was;
+  - **Disable** (startup entries, files in the Startup folder, scheduled tasks, services),
+    **Quarantine** (suspicious files), **Remove extension** (browser extensions: close the
+    browser first), **Remove exclusion** (Defender exclusions), **Disable account** and
+    **Remove certificate** (added root certificates). They save a backup first, and **Undo**
+    puts everything back as it was;
+  - **End process**, for suspicious processes (it cannot be undone, but deletes nothing);
+  - **Delete**, for suspicious files and browser extensions: it deletes them for good, after
+    a warning;
+- **Fix all**, at the top right of the results: it fixes every high and medium-risk item with
+  an action in one go, with a single Windows prompt. Its number goes down as you fix items one
+  by one. Suspicious files are deleted, everything else is
+  disabled. CheckBackdoor can be wrong (false positives), so it asks for confirmation with the
+  full list and a clear warning first;
+- the **Backup** page, in the bar only while something is in quarantine: the files and
+  browser extensions moved away from the results, each with **Restore** (back where it was)
+  and **Delete for good**;
 - the scan **History** and the **Comparison** between two scans: new and gone findings, items
   added, changed (usually updates) and removed;
 - the **Settings**: VirusTotal key (encrypted with DPAPI for your Windows user, it never goes

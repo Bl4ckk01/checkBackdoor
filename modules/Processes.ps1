@@ -1,6 +1,15 @@
 # Running processes: disguises as system processes (T1036), odd parents, unsigned
 # executables in user folders, cryptominers.
 
+# "End process" from the app: the start time tells this process apart from another one that
+# gets the same number later
+function New-ProcessRemedy {
+    param($Process)
+    if (-not $Process.ExecutablePath) { return $null }
+    $started = if ($Process.CreationDate) { ([datetime]$Process.CreationDate).ToString('o') } else { $null }
+    return @{ Kind = 'Process'; ProcessId = [int]$Process.ProcessId; Path = "$($Process.ExecutablePath)"; Started = $started; Admin = $true }
+}
+
 function Invoke-CheckProcesses {
     $cat = 'Processes'
     $sys32 = "$env:SystemRoot\System32".ToLower()
@@ -40,7 +49,7 @@ function Invoke-CheckProcesses {
             if ($dir -notin $expected[$name]) {
                 $info = Get-FileInfo $path
                 Add-Finding -Category $cat -Severity 'High' -Title "Process disguised as $($p.Name)" -Path $path -Evidence $evidence `
-                    -Mitre 'T1036.005' -Sha256 $info.Sha256 -Signer $info.Signer `
+                    -Mitre 'T1036.005' -Sha256 $info.Sha256 -Signer $info.Signer -Remedy (New-ProcessRemedy $p) `
                     -Reasons "The real $($p.Name) only lives in $($expected[$name] -join ' or '). This one runs from another folder." `
                     -Recommendation 'End the process, upload the file to virustotal.com and find which autostart entry launches it (see the other sections of the report).'
                 continue
@@ -55,7 +64,7 @@ function Invoke-CheckProcesses {
                     $info = Get-FileInfo $path
                     if ($info -and $info.IsMicrosoft) { break }
                     Add-Finding -Category $cat -Severity 'High' -Title "Name imitating a system process: $($p.Name) (similar to $t.exe)" `
-                        -Path $path -Evidence $evidence -Mitre 'T1036.005' -Sha256 $info.Sha256 -Signer $info.Signer `
+                        -Path $path -Evidence $evidence -Mitre 'T1036.005' -Sha256 $info.Sha256 -Signer $info.Signer -Remedy (New-ProcessRemedy $p) `
                         -Reasons 'Malware picks names almost identical to Windows ones so as not to stand out in Task Manager.'
                     break
                 }
@@ -98,7 +107,7 @@ function Invoke-CheckProcesses {
                 ($risk.Target -match '(?i)\\Temp\\|\\Users\\Public\\|\\\$Recycle\.Bin\\|^[A-Z]:\\ProgramData\\[^\\]+$|\\AppData\\(Roaming|Local|LocalLow)\\[^\\]+$')
             if ($sev -in 'High', 'Medium' -and $strong) {
                 Add-Finding -Category $cat -Severity $sev -Title "Suspicious process: $($p.Name) (PID $($p.ProcessId))" -Path $risk.Target `
-                    -Evidence $cmd -Mitre 'T1059' -Reasons $risk.Reasons -Sha256 $risk.Sha256 -Signer $risk.Signer `
+                    -Evidence $cmd -Mitre 'T1059' -Reasons $risk.Reasons -Sha256 $risk.Sha256 -Signer $risk.Signer -Remedy (New-ProcessRemedy $p) `
                     -Recommendation 'Check it in Task Manager (right click > Open file location) and upload the file to virustotal.com.'
             }
         }
@@ -127,7 +136,7 @@ function Invoke-CheckProcesses {
         if ($info.SignatureStatus -ne 'Valid') { $sev = 'Medium'; $why += 'Not signed' }
         if ($info.SignatureStatus -ne 'Valid' -and (Test-UserWritablePath $p.ExecutablePath)) { $sev = 'High'; $why += 'Runs from a user folder' }
         Add-Finding -Category $cat -Severity $sev -Title "High CPU usage: $($p.Name) ($pct%)" -Path $p.ExecutablePath -Evidence $p.CommandLine `
-            -Mitre 'T1496' -Reasons (@('Possible cryptominer.') + $why) -Sha256 $info.Sha256 -Signer $info.Signer `
+            -Mitre 'T1496' -Reasons (@('Possible cryptominer.') + $why) -Sha256 $info.Sha256 -Signer $info.Signer -Remedy (New-ProcessRemedy $p) `
             -Recommendation 'If you were not using that program at the time, check it on virustotal.com. Note: high usage during games, builds or updates is normal.'
     }
 }

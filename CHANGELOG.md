@@ -5,6 +5,25 @@ versions are the same.
 
 ## Unreleased
 
+### Added
+- **More actions on findings** in the app: **Quarantine** suspicious files, **Remove
+  extension** from the browser (the browser must be closed), **Remove exclusion** from
+  Defender, **Disable account**, **Remove certificate** (all with a backup and Undo), and
+  **End process** for suspicious processes.
+- **Delete** for suspicious files and browser extensions: deletes them for good, after a
+  warning about false positives. It refuses a file that changed after the scan.
+
+- **Backup** page in the app bar, shown only while something is in quarantine: every file
+  and browser extension moved away, with **Restore** and **Delete for good**. Deleting never
+  follows a link out of the backup folder.
+
+### Changed
+- "Show the file" also works on items that are folders (browser extensions), and is called
+  "Show the folder" for them.
+- **Fix all**, at the top right of the results: fixes every high and medium-risk item that
+  has an action, with one confirmation (the full list and a warning) and one Windows prompt.
+  Files are deleted, everything else disabled. Its number goes down as items are fixed.
+
 ### Fixed
 - The timeline reported CheckBackdoor's own modules as suspicious PowerShell scripts: Windows
   logs them (event 4104) and the text read from the log has different line endings from the
