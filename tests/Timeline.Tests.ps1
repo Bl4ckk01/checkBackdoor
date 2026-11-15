@@ -114,6 +114,12 @@ Describe 'PowerShell scripts (4104)' {
         Test-PowerShellEvents -Events @(New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = $cradle }) -OwnText "x`n$cradle`ny"
         Get-TimelineFindings | Should -BeNullOrEmpty
     }
+    It 'ignores the CheckBackdoor scripts whatever the line endings' {
+        # On disk the scripts are CRLF; the event read through XML has LF only
+        $script = "function Get-X {`r`n    $cradle`r`n}"
+        Test-PowerShellEvents -Events @(New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = ($script -replace "`r`n", "`n") }) -OwnText "x`r`n$script`r`ny"
+        Get-TimelineFindings | Should -BeNullOrEmpty
+    }
     It 'counts the same script once and only the first part of a long one' {
         Test-PowerShellEvents -Events @(
             (New-Ev 4104 @{ MessageNumber = '1'; ScriptBlockText = $cradle }),

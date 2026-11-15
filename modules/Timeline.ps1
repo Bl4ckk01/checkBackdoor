@@ -219,12 +219,16 @@ function Get-ScriptBlockRisk {
 
 function Test-PowerShellEvents {
     param($Events, [string]$OwnText)
+    # Same line endings on both sides: the scripts are CRLF on disk, but the event text comes
+    # through the XML parser, which turns every CRLF into LF. Without this the engine would
+    # report its own modules as suspicious scripts.
+    $OwnText = $OwnText -replace "`r`n?", "`n"
     $seen = @{}
     foreach ($ev in @($Events)) {
         if ($ev.Data['MessageNumber'] -and $ev.Data['MessageNumber'] -ne '1') { continue }
         $text = $ev.Data['ScriptBlockText']
         if (-not $text) { continue }
-        $trim = $text.Trim()
+        $trim = ($text -replace "`r`n?", "`n").Trim()
         if ($OwnText -and $trim.Length -gt 0 -and $OwnText.IndexOf($trim, [StringComparison]::Ordinal) -ge 0) { continue }
         # Modules Windows generates for CIM cmdlets (e.g. Defender's Get-MpPreference) and
         # scripts in C:\Windows: used by the system, not by whoever installed something.

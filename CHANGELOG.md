@@ -3,6 +3,13 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Engine and app
 versions are the same.
 
+## Unreleased
+
+### Fixed
+- The timeline reported CheckBackdoor's own modules as suspicious PowerShell scripts: Windows
+  logs them (event 4104) and the text read from the log has different line endings from the
+  files, so the engine no longer recognized them as its own.
+
 ## 1.3.0
 
 The first public release.
